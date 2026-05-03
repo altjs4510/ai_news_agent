@@ -24,15 +24,14 @@ YOUTUBE_CHANNELS = {
 }
 
 BLUESKY_HANDLES = [
-    # AI 코딩·연구 본진 (X→Bluesky 이주·크로스포스트)
-    "karpathy.bsky.social",
-    "swyx.io",
+    # 2026-05 기준으로 실증 확인된 활성 AI 계정만 등록.
+    # Karpathy / Anthropic / HF / DeepLearning.ai / Yann LeCun / Lilian Weng / swyx 등
+    # 다수는 핸들을 squat했지만 X-only 운영이라 게시글이 0~소수에 그쳐 제외.
+    # X-only 인물의 담론은 큐레이션 뉴스레터(TLDR AI / Rundown / AlphaSignal 등)가 24h 내 흡수.
     "simonwillison.net",
     "hardmaru.bsky.social",
-    "lilianweng.bsky.social",
-    "deeplearningai.bsky.social",
-    "anthropic.bsky.social",
-    "huggingface.bsky.social",
+    "emilymbender.bsky.social",
+    "goodfellow.bsky.social",
 ]
 
 REDDIT_SUBREDDITS = [
