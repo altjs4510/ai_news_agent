@@ -2,7 +2,7 @@
 # 매주 월요일 오전 6시에 실행
 # 분 시 일 월 요일
 
-0 6 * * 1 /Users/ac1138/Desktop/cookie/ai_news_agent/run_ai_news.sh
+0 6 * * 1 /Users/cookie/Desktop/personal-workspace/ai_news_agent/run_ai_news.sh
 
 # 추가 옵션 (필요시 주석 해제):
 # 매일 오전 6시 실행: 0 6 * * *
