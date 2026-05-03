@@ -31,10 +31,12 @@ class AIBlogCollector:
         self.per_source_limit = per_source_limit
 
     async def fetch_posts(self):
+        # Meta AI 블로그는 SPA로 server HTML에서 제목 추출이 어려워 임시 보류.
         results = await asyncio.gather(
             self._fetch_anthropic(),
             self._fetch_openai(),
             self._fetch_google(),
+            self._fetch_deepmind(),
             return_exceptions=True,
         )
         all_posts = []
@@ -141,7 +143,8 @@ class AIBlogCollector:
                 except ValueError:
                     dt = None
 
-            if dt and dt < self.cutoff:
+            # 날짜 추출 실패하거나 cutoff보다 오래된 글은 제외 (cutoff 정확성 보장)
+            if dt is None or dt < self.cutoff:
                 continue
 
             title = blob
@@ -162,6 +165,82 @@ class AIBlogCollector:
                 break
 
         logger.info(f"Anthropic Blog 수집 완료: {len(posts)}개")
+        return posts
+
+
+    async def _fetch_deepmind(self):
+        """DeepMind blog (HTML 스크래핑, 날짜 정보 부재 → 최근 게시물 한정)."""
+        url = "https://deepmind.google/discover/blog/"
+        try:
+            text = await self._get(url)
+        except Exception as e:
+            logger.error(f"DeepMind Blog 요청 실패: {e}")
+            return []
+
+        soup = BeautifulSoup(text, "html.parser")
+        seen = set()
+        posts = []
+        for a in soup.select("article a[href*='/blog/']"):
+            href = a.get("href", "")
+            if not href or href in seen:
+                continue
+            if "/blog/" not in href or href.rstrip("/").endswith("/blog"):
+                continue
+            seen.add(href)
+            title = a.get_text(separator=" ", strip=True)
+            if not title or len(title) < 8 or title.lower() in {"learn more", "read more"}:
+                continue
+            full_url = href if href.startswith("http") else f"https://deepmind.google{href}"
+            posts.append({
+                "source": "DeepMind Blog",
+                "title": title[:200],
+                "url": full_url,
+                "published_at": "",
+                "content": title[:200],
+            })
+            if len(posts) >= self.per_source_limit:
+                break
+
+        logger.info(f"DeepMind Blog 수집 완료: {len(posts)}개")
+        return posts
+
+    async def _fetch_meta_ai(self):
+        """Meta AI blog (HTML 스크래핑, 날짜 정보 부재 → 최근 게시물 한정)."""
+        url = "https://ai.meta.com/blog/"
+        try:
+            text = await self._get(url)
+        except Exception as e:
+            logger.error(f"Meta AI Blog 요청 실패: {e}")
+            return []
+
+        soup = BeautifulSoup(text, "html.parser")
+        seen = set()
+        posts = []
+        for a in soup.select("a[href*='ai.meta.com/blog/']"):
+            href = a.get("href", "")
+            if not href or href in seen:
+                continue
+            if href.rstrip("/").endswith("/blog"):
+                continue
+            seen.add(href)
+            title = a.get_text(separator=" ", strip=True)
+            if not title or len(title) < 8 or title.lower() in {"featured", "learn more", "read more"}:
+                # 부모 element에서 다른 텍스트 시도
+                parent_text = a.find_parent().get_text(separator=" ", strip=True) if a.find_parent() else ""
+                title = parent_text[:200] if parent_text else title
+            if not title:
+                continue
+            posts.append({
+                "source": "Meta AI Blog",
+                "title": title[:200],
+                "url": href,
+                "published_at": "",
+                "content": title[:200],
+            })
+            if len(posts) >= self.per_source_limit:
+                break
+
+        logger.info(f"Meta AI Blog 수집 완료: {len(posts)}개")
         return posts
 
 

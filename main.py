@@ -5,6 +5,8 @@ from sources.youtube import YouTubeParser
 from sources.reddit import RedditCollector
 from sources.github_trending import GitHubTrendingCollector
 from sources.ai_blogs import AIBlogCollector
+from sources.news_feeds import NewsFeedCollector
+from sources.research_feeds import ResearchFeedCollector
 from delivery.markdown_writer import MarkdownWriter
 from delivery.notion_writer import NotionWriter
 from delivery.email_sender import EmailSender
@@ -74,6 +76,8 @@ async def main():
         ENABLE_REDDIT = True
         ENABLE_GITHUB_TRENDING = True
         ENABLE_AI_BLOGS = True
+        ENABLE_NEWS_FEEDS = True       # Hacker News + Product Hunt + TechCrunch AI
+        ENABLE_RESEARCH_FEEDS = True   # arxiv (cs.AI/cs.CL) + HuggingFace Papers
 
         # 출력 채널 활성화 설정
         ENABLE_BLOG = True
@@ -97,6 +101,12 @@ async def main():
         if ENABLE_AI_BLOGS:
             ai_blogs = AIBlogCollector(days=7, per_source_limit=15)
             collectors.append(('ai_blogs', ai_blogs.fetch_posts()))
+        if ENABLE_NEWS_FEEDS:
+            news_feeds = NewsFeedCollector(days=7, per_source_limit=12)
+            collectors.append(('news_feeds', news_feeds.fetch_posts()))
+        if ENABLE_RESEARCH_FEEDS:
+            research_feeds = ResearchFeedCollector(days=7, per_source_limit=10)
+            collectors.append(('research_feeds', research_feeds.fetch_posts()))
 
         writer = MarkdownWriter()
 
@@ -113,6 +123,8 @@ async def main():
         reddit_posts = []
         github_repos = []
         ai_blog_posts = []
+        news_feed_posts = []
+        research_feed_posts = []
 
         for i, (source_name, _) in enumerate(collectors):
             result = results[i] if i < len(results) and not isinstance(results[i], Exception) else []
@@ -126,10 +138,14 @@ async def main():
                 github_repos = result
             elif source_name == 'ai_blogs':
                 ai_blog_posts = result
+            elif source_name == 'news_feeds':
+                news_feed_posts = result
+            elif source_name == 'research_feeds':
+                research_feed_posts = result
 
         # 마크다운 파일 저장
         markdown_writer = MarkdownWriter()
-        markdown_writer.save_raw_contents(articles, videos, reddit_posts, github_repos, ai_blog_posts)
+        markdown_writer.save_raw_contents(articles, videos, reddit_posts, github_repos, ai_blog_posts, news_feed_posts, research_feed_posts)
         
         # Reddit 포스트 관련성 평가 및 필터링
         logger.info("Reddit 포스트 관련성 평가 중...")
@@ -142,7 +158,7 @@ async def main():
         
         # Reddit 포스트 번역
         logger.info("원본 데이터 저장 중...")
-        markdown_writer.save_raw_contents(articles, videos, relevant_posts, github_repos, ai_blog_posts)
+        markdown_writer.save_raw_contents(articles, videos, relevant_posts, github_repos, ai_blog_posts, news_feed_posts, research_feed_posts)
         
         logger.info("번역 시작...")
         translated_posts = await translate_contents_batch(relevant_posts)
@@ -158,10 +174,15 @@ async def main():
         reddit_translated_content = _read_or_empty(f"{report_path}/reddit_translated.md")
         github_content = _read_or_empty(f"{report_path}/github_raw.md")
         ai_blogs_content = _read_or_empty(f"{report_path}/ai_blogs_raw.md")
+        news_content = _read_or_empty(f"{report_path}/news_raw.md")
+        research_content = _read_or_empty(f"{report_path}/research_raw.md")
 
         # 통합 인사이트 (모든 소스 종합)
         logger.info("통합 인사이트 추출 중...")
-        await summarize_combined_insights(ai_blogs_content, github_content, reddit_translated_content)
+        await summarize_combined_insights(
+            ai_blogs_content, github_content, reddit_translated_content,
+            news_content, research_content,
+        )
         combined_insights = _read_or_empty(f"{report_path}/combined_insights.md")
 
         summary, keywords = None, None
@@ -376,22 +397,34 @@ async def clean_textblock_from_file(filepath):
         logger.error(f"TextBlock 제거 중 오류 발생: {str(e)}")
         return False
 
-async def summarize_combined_insights(ai_blogs_content: str, github_content: str, reddit_translated_content: str):
-    """모든 수집 소스(AI 블로그·GitHub Trending·Reddit)를 종합한 인사이트 마크다운을 생성합니다."""
+async def summarize_combined_insights(
+    ai_blogs_content: str,
+    github_content: str,
+    reddit_translated_content: str,
+    news_content: str = "",
+    research_content: str = "",
+):
+    """모든 수집 소스를 종합한 인사이트 마크다운을 생성합니다."""
     try:
         logger.info("통합 인사이트 추출 시작")
         writer = MarkdownWriter()
 
         prompt = f"""다음은 이번 주 AI 관련 자료입니다. 모든 자료를 종합 분석해서 가독성 좋은 마크다운 인사이트 글을 작성해주세요.
 
-==== AI 공식 블로그 (Anthropic / OpenAI / Google) ====
-{ai_blogs_content[:6000]}
+==== AI 공식 블로그 (Anthropic / OpenAI / Google / DeepMind) ====
+{ai_blogs_content[:5500]}
 
 ==== GitHub Trending (이번 주 인기 오픈소스) ====
-{github_content[:3500]}
+{github_content[:3000]}
+
+==== Hacker News · Product Hunt · TechCrunch AI ====
+{news_content[:4500]}
+
+==== arxiv · HuggingFace Papers (학술/연구) ====
+{research_content[:3500]}
 
 ==== Reddit AI 커뮤니티 (한국어 번역본) ====
-{reddit_translated_content[:9000]}
+{reddit_translated_content[:7500]}
 
 ## 작성 규칙 (반드시 지키세요)
 

@@ -10,8 +10,10 @@ from utils.logger import setup_logger
 logger = setup_logger('blog_publisher')
 
 RAW_SOURCES = [
-    ("AI 공식 블로그 (Anthropic / OpenAI / Google)", "ai_blogs_raw.md"),
+    ("AI 공식 블로그 (Anthropic / OpenAI / Google / DeepMind)", "ai_blogs_raw.md"),
     ("GitHub Trending (이번 주 인기 오픈소스)", "github_raw.md"),
+    ("Hacker News · Product Hunt · TechCrunch AI", "news_raw.md"),
+    ("arxiv · HuggingFace Papers (학술/연구)", "research_raw.md"),
     ("Reddit 원문 목록", "reddit_raw.md"),
     ("Reddit 번역본 (전문)", "reddit_translated.md"),
     ("AI Times", "aitimes_raw.md"),
