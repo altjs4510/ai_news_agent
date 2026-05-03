@@ -7,6 +7,8 @@ from sources.github_trending import GitHubTrendingCollector
 from sources.ai_blogs import AIBlogCollector
 from sources.news_feeds import NewsFeedCollector
 from sources.research_feeds import ResearchFeedCollector
+from sources.bluesky import BlueskyCollector
+from config import BLUESKY_HANDLES
 from delivery.markdown_writer import MarkdownWriter
 from delivery.notion_writer import NotionWriter
 from delivery.email_sender import EmailSender
@@ -94,6 +96,7 @@ async def main():
         ENABLE_AI_BLOGS = True
         ENABLE_NEWS_FEEDS = True       # Hacker News + Product Hunt + TechCrunch AI
         ENABLE_RESEARCH_FEEDS = True   # arxiv (cs.AI/cs.CL) + HuggingFace Papers
+        ENABLE_BLUESKY = True          # X 대체 — Bluesky 공개 피드 (인증 불필요)
 
         # 출력 채널 활성화 설정
         ENABLE_BLOG = True
@@ -123,6 +126,9 @@ async def main():
         if ENABLE_RESEARCH_FEEDS:
             research_feeds = ResearchFeedCollector(days=7, per_source_limit=10)
             collectors.append(('research_feeds', research_feeds.fetch_posts()))
+        if ENABLE_BLUESKY:
+            bluesky = BlueskyCollector(handles=BLUESKY_HANDLES, days=7, per_handle_limit=8)
+            collectors.append(('bluesky', bluesky.fetch_posts()))
 
         writer = MarkdownWriter()
 
@@ -141,6 +147,7 @@ async def main():
         ai_blog_posts = []
         news_feed_posts = []
         research_feed_posts = []
+        bluesky_posts = []
 
         for i, (source_name, _) in enumerate(collectors):
             result = results[i] if i < len(results) and not isinstance(results[i], Exception) else []
@@ -158,10 +165,12 @@ async def main():
                 news_feed_posts = result
             elif source_name == 'research_feeds':
                 research_feed_posts = result
+            elif source_name == 'bluesky':
+                bluesky_posts = result
 
         # 마크다운 파일 저장
         markdown_writer = MarkdownWriter()
-        markdown_writer.save_raw_contents(articles, videos, reddit_posts, github_repos, ai_blog_posts, news_feed_posts, research_feed_posts)
+        markdown_writer.save_raw_contents(articles, videos, reddit_posts, github_repos, ai_blog_posts, news_feed_posts, research_feed_posts, bluesky_posts)
         
         # Reddit 포스트 관련성 평가 및 필터링
         logger.info("Reddit 포스트 관련성 평가 중...")
@@ -174,7 +183,7 @@ async def main():
         
         # Reddit 포스트 번역
         logger.info("원본 데이터 저장 중...")
-        markdown_writer.save_raw_contents(articles, videos, relevant_posts, github_repos, ai_blog_posts, news_feed_posts, research_feed_posts)
+        markdown_writer.save_raw_contents(articles, videos, relevant_posts, github_repos, ai_blog_posts, news_feed_posts, research_feed_posts, bluesky_posts)
         
         logger.info("번역 시작...")
         translated_posts = await translate_contents_batch(relevant_posts)
@@ -192,12 +201,13 @@ async def main():
         ai_blogs_content = _read_or_empty(f"{report_path}/ai_blogs_raw.md")
         news_content = _read_or_empty(f"{report_path}/news_raw.md")
         research_content = _read_or_empty(f"{report_path}/research_raw.md")
+        bluesky_content = _read_or_empty(f"{report_path}/bluesky_raw.md")
 
         # 통합 인사이트 (모든 소스 종합)
         logger.info("통합 인사이트 추출 중...")
         await summarize_combined_insights(
             ai_blogs_content, github_content, reddit_translated_content,
-            news_content, research_content,
+            news_content, research_content, bluesky_content,
         )
         combined_insights = _read_or_empty(f"{report_path}/combined_insights.md")
 
@@ -207,7 +217,7 @@ async def main():
         if ENABLE_BLOG or ENABLE_NOTION:
             try:
                 headline, spotlight, summary, keywords = await generate_summary_and_keywords(
-                    aitimes_content, youtube_content, combined_insights, github_content, ai_blogs_content
+                    aitimes_content, youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content
                 )
                 _write_summary_markdown(report_path, date_str, headline, spotlight, summary, keywords)
             except Exception as e:
@@ -419,6 +429,7 @@ async def summarize_combined_insights(
     reddit_translated_content: str,
     news_content: str = "",
     research_content: str = "",
+    bluesky_content: str = "",
 ):
     """모든 수집 소스를 종합한 인사이트 마크다운을 생성합니다."""
     try:
@@ -441,6 +452,9 @@ async def summarize_combined_insights(
 
 ==== Reddit AI 커뮤니티 (한국어 번역본) ====
 {reddit_translated_content[:7500]}
+
+==== Bluesky 버즈 (X 대체 — 주요 AI 인물 단문) ====
+{bluesky_content[:3500]}
 
 ## 작성 규칙 (반드시 지키세요)
 
@@ -522,12 +536,12 @@ async def summarize_combined_insights(
         logger.error(f"통합 인사이트 추출 실패: {str(e)}", exc_info=True)
         return None
 
-async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit_insights, github_content="", ai_blogs_content=""):
+async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit_insights, github_content="", ai_blogs_content="", bluesky_content=""):
     """수집된 콘텐츠를 기반으로 전체 요약과 키워드를 생성합니다."""
     logger.info("요약 및 키워드 생성 시작")
 
     # 요약을 위한 프롬프트 생성
-    prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, AI Times, YouTube 영상 자료입니다. 이를 바탕으로 아래 기준에 따라 정리해주세요.
+    prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, AI Times, YouTube 영상, Bluesky 버즈 자료입니다. 이를 바탕으로 아래 기준에 따라 정리해주세요.
 
 자료의 각 항목에는 [텍스트](URL) 형태의 마크다운 링크가 포함되어 있으니, 인용할 때 그 URL을 그대로 본문에 가져다 쓰세요.
 
@@ -545,6 +559,9 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
 
 ==== YouTube ====
 {youtube_content[:2000]}
+
+==== Bluesky 버즈 (주요 AI 인물 단문, X 대체) ====
+{bluesky_content[:2500]}
 
 ## 사용자 프로젝트 컨텍스트 (Spotlight 작성 시 활용)
 

@@ -20,7 +20,7 @@ class MarkdownWriter:
         base_dir.mkdir(parents=True, exist_ok=True)
         return base_dir
 
-    def save_raw_contents(self, aitimes_posts, youtube_posts, reddit_posts, github_repos=None, ai_blog_posts=None, news_feed_posts=None, research_feed_posts=None):
+    def save_raw_contents(self, aitimes_posts, youtube_posts, reddit_posts, github_repos=None, ai_blog_posts=None, news_feed_posts=None, research_feed_posts=None, bluesky_posts=None):
         """수집된 원본 데이터를 마크다운 형식으로 저장합니다."""
         aitimes_file = self._save_table_contents(aitimes_posts, "aitimes")
         youtube_file = self._save_table_contents(youtube_posts, "youtube")
@@ -29,7 +29,28 @@ class MarkdownWriter:
         ai_blogs_file = self._save_table_contents(ai_blog_posts or [], "ai_blogs")
         news_file = self._save_table_contents(news_feed_posts or [], "news")
         research_file = self._save_table_contents(research_feed_posts or [], "research")
-        return aitimes_file, youtube_file, reddit_files, github_file, ai_blogs_file, news_file, research_file
+        bluesky_file = self._save_bluesky_contents(bluesky_posts or [])
+        return aitimes_file, youtube_file, reddit_files, github_file, ai_blogs_file, news_file, research_file, bluesky_file
+
+    def _save_bluesky_contents(self, posts):
+        """Bluesky 게시물을 본문 + 인게이지먼트 표로 저장."""
+        filepath = self.base_dir / "bluesky_raw.md"
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("# Bluesky (X 대체) 수집 데이터\n")
+            f.write(f"수집 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write("| 작성자 | 본문 | 인게이지먼트 | 작성일 | 링크 |\n")
+            f.write("|--------|------|--------------|--------|------|\n")
+            for p in posts:
+                source = p.get("source", "").replace("|", "\\|")
+                content = (p.get("content") or "").replace("|", "\\|").replace("\n", " ")
+                # 본문이 너무 길면 표 깨짐 방지로 200자 트림
+                if len(content) > 220:
+                    content = content[:220] + "…"
+                engagement = p.get("engagement", "").replace("|", "\\|")
+                pub = p.get("published_at", "-")
+                url = p.get("url", "")
+                f.write(f"| {source} | {content} | {engagement} | {pub} | [bsky]({url}) |\n")
+        return filepath
 
     def _save_github_contents(self, contents):
         """GitHub Trending 저장소를 표 형식으로 저장합니다."""

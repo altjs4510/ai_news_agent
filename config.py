@@ -23,6 +23,18 @@ YOUTUBE_CHANNELS = {
     "필로소피 AI 교육": "UCKXP5U8mn3UMC6gWblROxAA"
 }
 
+BLUESKY_HANDLES = [
+    # AI 코딩·연구 본진 (X→Bluesky 이주·크로스포스트)
+    "karpathy.bsky.social",
+    "swyx.io",
+    "simonwillison.net",
+    "hardmaru.bsky.social",
+    "lilianweng.bsky.social",
+    "deeplearningai.bsky.social",
+    "anthropic.bsky.social",
+    "huggingface.bsky.social",
+]
+
 REDDIT_SUBREDDITS = [
     # 일반 AI 동향
     "artificial",

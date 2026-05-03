@@ -11,6 +11,7 @@ logger = setup_logger('blog_publisher')
 
 RAW_SOURCES = [
     ("AI 블로그 (공식·엔지니어링·에이전트·큐레이션)", "ai_blogs_raw.md"),
+    ("Bluesky 와글와글 (주요 AI 인물 단문 — X 대체)", "bluesky_raw.md"),
     ("GitHub (Trending + MCP/Agent 토픽)", "github_raw.md"),
     ("Hacker News · Product Hunt · TechCrunch AI", "news_raw.md"),
     ("arxiv · HuggingFace Papers (학술/연구)", "research_raw.md"),
