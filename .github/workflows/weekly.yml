@@ -54,3 +54,13 @@ jobs:
           BLOG_REPO_PATH: ${{ github.workspace }}/ai_news_blog_repo
           BLOG_SITE_URL: https://altjs4510.github.io/ai_news_blog
         run: uv run python main.py
+
+      - name: Notify Slack on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\":\":x: *AI News 수집 실패*\\n<${RUN_URL}|workflow run 보기>\"}" \
+            "$SLACK_WEBHOOK_URL"
