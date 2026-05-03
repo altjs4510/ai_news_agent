@@ -29,7 +29,7 @@ def _read_or_empty(path: str) -> str:
         return ""
 
 
-def _write_summary_markdown(report_path: str, date_str: str, headline, summary, keywords) -> None:
+def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight, summary, keywords) -> None:
     if not summary:
         return
     display_date = datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
@@ -43,6 +43,21 @@ def _write_summary_markdown(report_path: str, date_str: str, headline, summary, 
     ]
     if headline:
         lines += [f"> [!tldr] TL;DR", f"> {headline}", ""]
+    if spotlight and isinstance(spotlight, dict) and spotlight.get("title"):
+        title = spotlight.get("title", "")
+        url = spotlight.get("url", "")
+        why = spotlight.get("why", "")
+        application = spotlight.get("application", "")
+        link = f"[{title}]({url})" if url else f"**{title}**"
+        lines += [
+            "> [!example] 🎯 이번 호 PoC/공부 추천",
+            f"> **{link}**",
+            ">",
+            f"> **왜 주목** — {why}",
+            ">",
+            f"> **어떻게 접목** — {application}",
+            "",
+        ]
     if keywords_line:
         lines += [f"> [!info] 이번 호 키워드", f"> {keywords_line}", ""]
     for cat in summary if isinstance(summary, list) else []:
@@ -159,12 +174,13 @@ async def main():
         ai_blogs_content = _read_or_empty(f"{report_path}/ai_blogs_raw.md")
 
         headline = ""
+        spotlight = None
         if ENABLE_BLOG or ENABLE_NOTION:
             try:
-                headline, summary, keywords = await generate_summary_and_keywords(
+                headline, spotlight, summary, keywords = await generate_summary_and_keywords(
                     aitimes_content, youtube_content, reddit_insights, github_content, ai_blogs_content
                 )
-                _write_summary_markdown(report_path, date_str, headline, summary, keywords)
+                _write_summary_markdown(report_path, date_str, headline, spotlight, summary, keywords)
             except Exception as e:
                 logger.error(f"요약/키워드 생성 실패: {e}")
 
@@ -503,27 +519,50 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
 ==== YouTube ====
 {youtube_content[:2000]}
 
+## 사용자 프로젝트 컨텍스트 (Spotlight 작성 시 활용)
+사용자는 ai_news_agent를 운영합니다:
+- Python 기반 AI 동향 자동 수집·번역·요약·블로그 발행 파이프라인
+- 수집 소스: Reddit (AI 서브레딧), GitHub Trending, Anthropic/OpenAI/Google 공식 블로그
+- LLM: Anthropic Claude (Haiku 4.5 평가/번역, Sonnet 4.6 요약)
+- 출력: Quartz 정적 블로그로 GitHub Pages에 자동 발행
+
 ## 작성 규칙 (반드시 지키세요)
 
-1. **헤드라인 1줄**: 이번 호 전체를 관통하는 핵심 흐름을 한 문장으로 요약하세요. 80자 내외.
-2. **카테고리 3~4개**: 다음 중에서 골라 사용하세요.
+1. **headline (1줄, 80자 내외)** — 이번 호를 관통하는 핵심 흐름.
+
+2. **spotlight (1개만)** — 자료 중에서 사용자가 직접 PoC하거나 공부하면 가장 도움이 될 항목 1개를 선정하세요. 가능하면 ai_news_agent에 접목 가능성이 높거나 AI 에이전트 운영 학습 가치가 큰 것을 우선합니다.
+   - title: 항목 이름 (저장소·제품·기능·블로그 글 제목 등)
+   - url: 자료에 등장한 URL (절대 임의 생성 금지)
+   - why: 왜 주목할 만한지 1~2문장
+   - application: ai_news_agent의 어떤 부분(수집기, 번역, 요약, 발행, 운영)에 어떻게 접목할지 구체적 제안 1~2문장
+
+3. **summary 카테고리 3~4개** — 다음 중에서 선택:
    - 지금 바로 실험해볼만한 도구/기능
    - 전략적으로 중요한 흐름
    - AI 에이전트 실전 운영 인사이트
    - 나중에 참고할만한 아이디어
-3. **각 카테고리당 3~5개 불릿**.
-4. **각 불릿은 반드시 [텍스트](URL) 마크다운 링크를 1개 이상 포함**합니다. URL은 위 자료에 등장한 것만 사용하고, 절대 임의로 만들지 마세요. 자료에 마땅한 URL이 없으면 그 항목은 작성하지 마세요.
-5. 불릿 시작에 카테고리에 어울리는 이모지 1개를 붙여 시각적으로 구분합니다.
-6. 인사말·결론 멘트 없이 본문만 작성합니다.
-7. **키워드 5개**: 이번 호의 핵심 주제 (각 2~3 단어).
+
+4. **각 카테고리 3~5개 item**. 각 item은 한 줄 마크다운 문자열로:
+   `**[이름](URL)** — 1~2문장 설명.`
+   형식을 반드시 지키세요. 이름은 짧고 구체적인 명사(저장소·제품·회사·사람), 본문은 em dash(—) 뒤로 1~2문장. 시작에 카테고리 어울리는 이모지 1개. URL은 자료에 등장한 것만 사용.
+
+5. **keywords 5개** — 이번 호 핵심 주제 (각 2~3 단어).
+
+6. 인사말·결론 멘트 금지. spotlight와 summary는 서로 중복되지 않게 합니다(spotlight 항목을 summary에 또 넣지 마세요).
 
 ## 응답 형식 (JSON, 다른 텍스트 금지)
 {{
-  "headline": "한 문장 헤드라인",
+  "headline": "...",
+  "spotlight": {{
+    "title": "...",
+    "url": "https://...",
+    "why": "...",
+    "application": "..."
+  }},
   "summary": [
-    {{"title": "카테고리 제목", "items": ["- 형식 없이 본문 마크다운만 (링크 포함)", "..."]}}
+    {{"title": "🛠️ 카테고리 제목", "items": ["**[이름](URL)** — 설명.", "..."]}}
   ],
-  "keywords": ["키워드1", "키워드2", "키워드3", "키워드4", "키워드5"]
+  "keywords": ["...", "...", "...", "...", "..."]
 }}"""
 
     try:
@@ -548,6 +587,7 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
             json_str = cleaned[start : end + 1]
             result_json = json.loads(json_str)
             headline = result_json.get('headline', '')
+            spotlight = result_json.get('spotlight') or None
             summary = result_json.get('summary', [])
             keywords = result_json.get('keywords', [])
 
@@ -557,9 +597,11 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
                 raise ValueError("키워드가 충분히 생성되지 않았습니다.")
 
             logger.info(f"헤드라인: {headline}")
+            if spotlight:
+                logger.info(f"Spotlight: {spotlight.get('title')}")
             logger.info(f"요약 생성 완료: {len(summary)}개 카테고리")
             logger.info(f"키워드 생성 완료: {keywords}")
-            return headline, summary, keywords
+            return headline, spotlight, summary, keywords
         raise ValueError("JSON 형식으로 응답이 오지 않았습니다.")
     
     except Exception as e:
