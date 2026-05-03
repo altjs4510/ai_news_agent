@@ -3,15 +3,16 @@ import os
 from sources.aitimes import AITimesCrawler
 from sources.youtube import YouTubeParser
 from sources.reddit import RedditCollector
+from sources.github_trending import GitHubTrendingCollector
+from sources.ai_blogs import AIBlogCollector
 from delivery.markdown_writer import MarkdownWriter
 from delivery.notion_writer import NotionWriter
 from delivery.email_sender import EmailSender
 from delivery.blog_publisher import BlogPublisher
 from utils.logger import setup_logger
-import openai
 from datetime import datetime
 import anthropic
-from anthropic import Anthropic
+from anthropic import Anthropic, AsyncAnthropic
 from utils.html_cleaner import clean_markdown_file
 import re
 import traceback
@@ -61,14 +62,16 @@ async def main():
         
         # 수집기 활성화 설정
         ENABLE_AITIMES = False
-        ENABLE_YOUTUBE = True
+        ENABLE_YOUTUBE = False
         ENABLE_REDDIT = True
+        ENABLE_GITHUB_TRENDING = True
+        ENABLE_AI_BLOGS = True
 
         # 출력 채널 활성화 설정
         ENABLE_BLOG = True
         ENABLE_NOTION = False
         ENABLE_EMAIL = False
-        
+
         # 수집기 초기화
         collectors = []
         if ENABLE_AITIMES:
@@ -80,7 +83,13 @@ async def main():
         if ENABLE_REDDIT:
             reddit = RedditCollector()
             collectors.append(('reddit', reddit.fetch_posts()))
-        
+        if ENABLE_GITHUB_TRENDING:
+            github = GitHubTrendingCollector(since="weekly", limit=25)
+            collectors.append(('github_trending', github.fetch_repos()))
+        if ENABLE_AI_BLOGS:
+            ai_blogs = AIBlogCollector(days=7, per_source_limit=15)
+            collectors.append(('ai_blogs', ai_blogs.fetch_posts()))
+
         writer = MarkdownWriter()
 
         # 병렬로 콘텐츠 수집
@@ -94,7 +103,9 @@ async def main():
         articles = []
         videos = []
         reddit_posts = []
-        
+        github_repos = []
+        ai_blog_posts = []
+
         for i, (source_name, _) in enumerate(collectors):
             result = results[i] if i < len(results) and not isinstance(results[i], Exception) else []
             if source_name == 'aitimes':
@@ -103,10 +114,14 @@ async def main():
                 videos = result
             elif source_name == 'reddit':
                 reddit_posts = result
+            elif source_name == 'github_trending':
+                github_repos = result
+            elif source_name == 'ai_blogs':
+                ai_blog_posts = result
 
         # 마크다운 파일 저장
         markdown_writer = MarkdownWriter()
-        markdown_writer.save_raw_contents(articles, videos, reddit_posts)
+        markdown_writer.save_raw_contents(articles, videos, reddit_posts, github_repos, ai_blog_posts)
         
         # Reddit 포스트 관련성 평가 및 필터링
         logger.info("Reddit 포스트 관련성 평가 중...")
@@ -119,7 +134,7 @@ async def main():
         
         # Reddit 포스트 번역
         logger.info("원본 데이터 저장 중...")
-        markdown_writer.save_raw_contents(articles, videos, relevant_posts)
+        markdown_writer.save_raw_contents(articles, videos, relevant_posts, github_repos, ai_blog_posts)
         
         logger.info("번역 시작...")
         translated_posts = await translate_contents_batch(relevant_posts)
@@ -139,10 +154,13 @@ async def main():
         reddit_insights = _read_or_empty(f"{report_path}/reddit_insights.md")
 
         summary, keywords = None, None
+        github_content = _read_or_empty(f"{report_path}/github_raw.md")
+        ai_blogs_content = _read_or_empty(f"{report_path}/ai_blogs_raw.md")
+
         if ENABLE_BLOG or ENABLE_NOTION:
             try:
                 summary, keywords = await generate_summary_and_keywords(
-                    aitimes_content, youtube_content, reddit_insights
+                    aitimes_content, youtube_content, reddit_insights, github_content, ai_blogs_content
                 )
                 _write_summary_markdown(report_path, date_str, summary, keywords)
             except Exception as e:
@@ -228,14 +246,17 @@ async def evaluate_post_relevance(title):
 
 위 점수 중 하나만 숫자로 응답해주세요. 다른 텍스트나 설명은 포함하지 마세요."""
 
-        client = openai.AsyncOpenAI()
-        response = await client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
+        client = AsyncAnthropic()
+        response = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=8,
             temperature=0.1,
+            messages=[{"role": "user", "content": prompt}],
         )
 
-        score = int(response.choices[0].message.content.strip())
+        raw = response.content[0].text.strip() if response.content else ""
+        digits = re.findall(r"[1-5]", raw)
+        score = int(digits[0]) if digits else 0
         is_relevant = score >= 4
         
         if is_relevant:
@@ -262,16 +283,17 @@ async def translate_content(content):
 
 번역된 내용만 반환해주세요."""
 
-        client = openai.AsyncOpenAI()
-        logger.info(f"OpenAI API 호출 중... ({title[:30]}...)")
-        
-        response = await client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
+        client = AsyncAnthropic()
+        logger.info(f"Anthropic API 호출 중... ({title[:30]}...)")
+
+        response = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000,
             temperature=0.3,
+            messages=[{"role": "user", "content": prompt}],
         )
 
-        translated_text = response.choices[0].message.content.strip()
+        translated_text = response.content[0].text.strip() if response.content else ""
         logger.info(f"번역 완료: {title[:30]}...")
         
         return {
@@ -400,7 +422,7 @@ async def summarize_reddit_insights():
 
         client = Anthropic()
         message = client.messages.create(
-            model="claude-3-7-sonnet-latest",
+            model="claude-sonnet-4-6",
             max_tokens=15000,
             temperature=0.3,
             messages=[{
@@ -455,21 +477,27 @@ async def summarize_reddit_insights():
         logger.error(f"Reddit 인사이트 추출 실패: {str(e)}", exc_info=True)
         return None
 
-async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit_insights):
+async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit_insights, github_content="", ai_blogs_content=""):
     """수집된 콘텐츠를 기반으로 전체 요약과 키워드를 생성합니다."""
     logger.info("요약 및 키워드 생성 시작")
-    
+
     # 요약을 위한 프롬프트 생성
-    prompt = f"""다음은 AI 관련 뉴스, YouTube 영상, Reddit 인사이트입니다. 이를 바탕으로 아래 기준에 따라 정리하고 주요 키워드 5개를 추출해주세요.
+    prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, AI Times, YouTube 영상 자료입니다. 이를 바탕으로 아래 기준에 따라 정리하고 주요 키워드 5개를 추출해주세요.
 
-AI Times 뉴스:
-{aitimes_content[:3000]}  # 너무 길지 않게 앞부분만 사용
-
-YouTube 영상:
-{youtube_content[:3000]}  # 너무 길지 않게 앞부분만 사용
+공식 AI 블로그:
+{ai_blogs_content[:3500]}  # 핵심 발표 위주
 
 Reddit 인사이트:
-{reddit_insights[:4000]}  # 너무 길지 않게 앞부분만 사용
+{reddit_insights[:4000]}  # 커뮤니티 토픽
+
+GitHub Trending (이번 주 인기 오픈소스):
+{github_content[:3000]}
+
+AI Times 뉴스:
+{aitimes_content[:2000]}
+
+YouTube 영상:
+{youtube_content[:2000]}
 
 ## 요약 목표
 - AI 트렌드를 빠르게 파악하고, 실행 가능한 인사이트를 뽑아내는 것
@@ -525,7 +553,7 @@ Reddit 인사이트:
         # Claude API 호출
         client = Anthropic()
         response = client.messages.create(
-            model="claude-3-7-sonnet-latest",
+            model="claude-sonnet-4-6",
             max_tokens=2000,
             temperature=0.2,
             system="너는 AI 뉴스 분석과 요약을 전문으로 하는 Assistant입니다. 주어진 콘텐츠에서 핵심 내용을 파악하고 간결하게 요약합니다.",

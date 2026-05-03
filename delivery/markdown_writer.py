@@ -13,18 +13,33 @@ class MarkdownWriter:
         base_dir.mkdir(parents=True, exist_ok=True)
         return base_dir
 
-    def save_raw_contents(self, aitimes_posts, youtube_posts, reddit_posts):
+    def save_raw_contents(self, aitimes_posts, youtube_posts, reddit_posts, github_repos=None, ai_blog_posts=None):
         """수집된 원본 데이터를 마크다운 형식으로 저장합니다."""
-        # AI Times 저장
         aitimes_file = self._save_table_contents(aitimes_posts, "aitimes")
-        
-        # YouTube 저장
         youtube_file = self._save_table_contents(youtube_posts, "youtube")
-        
-        # Reddit 저장 (원문 테이블과 번역본)
         reddit_files = self._save_reddit_contents(reddit_posts)
-        
-        return aitimes_file, youtube_file, reddit_files
+        github_file = self._save_github_contents(github_repos or [])
+        ai_blogs_file = self._save_table_contents(ai_blog_posts or [], "ai_blogs")
+        return aitimes_file, youtube_file, reddit_files, github_file, ai_blogs_file
+
+    def _save_github_contents(self, contents):
+        """GitHub Trending 저장소를 표 형식으로 저장합니다."""
+        filepath = self.base_dir / "github_raw.md"
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("# GitHub Trending 수집 데이터\n")
+            f.write(f"수집 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write("| 저장소 | 설명 | 언어 | 기간 별 | 총 별 |\n")
+            f.write("|--------|------|------|---------|-------|\n")
+            for c in contents:
+                title = c["title"].replace("|", "\\|")
+                desc = (c.get("description") or "").replace("|", "\\|").replace("\n", " ")
+                lang = c.get("language", "")
+                stars_period = c.get("stars_period", "")
+                total_stars = c.get("total_stars", "")
+                f.write(
+                    f"| [{title}]({c['url']}) | {desc} | {lang} | {stars_period} | {total_stars} |\n"
+                )
+        return filepath
 
     def _save_table_contents(self, contents, source_type):
         """테이블 형식으로 콘텐츠를 저장합니다."""
