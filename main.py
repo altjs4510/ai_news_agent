@@ -42,7 +42,12 @@ def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight
         "",
     ]
     if headline:
-        lines += [f"> [!tldr] TL;DR", f"> {headline}", ""]
+        lines += [
+            '{{< callout emoji="📌" >}}',
+            f"**TL;DR** — {headline}",
+            "{{< /callout >}}",
+            "",
+        ]
     if spotlight and isinstance(spotlight, dict) and spotlight.get("title"):
         title = spotlight.get("title", "")
         url = spotlight.get("url", "")
@@ -50,16 +55,24 @@ def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight
         application = spotlight.get("application", "")
         link = f"[{title}]({url})" if url else f"**{title}**"
         lines += [
-            "> [!example] 🎯 이번 호 PoC/공부 추천",
-            f"> **{link}**",
-            ">",
-            f"> **왜 주목** — {why}",
-            ">",
-            f"> **어떻게 접목** — {application}",
+            '{{< callout emoji="🎯" >}}',
+            "**이번 호 PoC / 공부 추천**",
+            "",
+            f"**{link}**",
+            "",
+            f"**왜 주목** — {why}",
+            "",
+            f"**어떻게 접목** — {application}",
+            "{{< /callout >}}",
             "",
         ]
     if keywords_line:
-        lines += [f"> [!info] 이번 호 키워드", f"> {keywords_line}", ""]
+        lines += [
+            '{{< callout emoji="🏷" >}}',
+            f"**이번 호 키워드** — {keywords_line}",
+            "{{< /callout >}}",
+            "",
+        ]
     os.makedirs(report_path, exist_ok=True)
     with open(f"{report_path}/summary.md", "w", encoding="utf-8") as f:
         f.write("\n".join(lines))

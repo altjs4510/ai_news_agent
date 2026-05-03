@@ -113,7 +113,7 @@ class BlogPublisher:
                 "---\n\n"
                 "이번 호는 요약 생성에 실패했습니다. 원본 수집 데이터는 [raw](raw) 페이지에서 확인할 수 있습니다.\n"
             )
-        (target / "index.md").write_text(index_md, encoding="utf-8")
+        (target / "_index.md").write_text(index_md, encoding="utf-8")
 
         # 2) 모든 raw 데이터를 단일 페이지로 묶음
         raw_sections = []
@@ -139,7 +139,7 @@ class BlogPublisher:
             )
             (target / "raw.md").write_text(raw_md, encoding="utf-8")
 
-        # 3) 홈 (content/index.md) = 최신 summary + 아카이브 안내
+        # 3) 홈 (content/_index.md) = 최신 summary + 아카이브 안내
         self._update_home(date_str, display_date, summary_body)
 
         if not self._git_commit_and_push(date_str):
@@ -151,15 +151,17 @@ class BlogPublisher:
         intro = (
             "---\n"
             'title: "AI News Digest"\n'
+            "toc: false\n"
             "---\n\n"
-            "> [!info] 매주 월요일 자동 발행\n"
-            "> 지난 7일치 AI 동향을 공식 블로그·커뮤니티·뉴스·학술·오픈소스에서 수집해, "
-            "Anthropic Claude로 통합 인사이트를 만든 뒤 자동으로 발행합니다.\n\n"
+            "{{< callout emoji=\"🗞\" >}}\n"
+            "**매주 월요일 자동 발행** — 지난 7일치 AI 동향을 공식 블로그·커뮤니티·뉴스·학술·오픈소스에서 수집해, "
+            "Anthropic Claude로 통합 인사이트를 만든 뒤 자동으로 발행합니다.\n"
+            "{{< /callout >}}\n\n"
             "**수집 소스** — Anthropic·OpenAI·Google·DeepMind 공식 블로그, "
             "Reddit (AI 서브레딧), Hacker News, Product Hunt, TechCrunch AI, "
             "arxiv (cs.AI/cs.CL), HuggingFace Papers, GitHub Trending. "
-            "([자세히](about))\n\n"
-            f"## 📰 가장 최근: [{display_date}](posts/{date_str}/)\n\n"
+            "([자세히](about/))\n\n"
+            f"## 📰 가장 최근: [{display_date}]({{{{< relref \"posts/{date_str}\" >}}}})\n\n"
         )
         body = summary_body.strip() if summary_body else "_(이번 호는 요약 생성에 실패했습니다.)_"
         archive = (
@@ -167,7 +169,7 @@ class BlogPublisher:
             "📚 [발행 아카이브 전체 보기](posts/) · "
             "🛰 [RSS 구독](index.xml)\n"
         )
-        (self.blog_repo / "content" / "index.md").write_text(intro + body + archive, encoding="utf-8")
+        (self.blog_repo / "content" / "_index.md").write_text(intro + body + archive, encoding="utf-8")
 
     def _git_commit_and_push(self, date_str: str) -> bool:
         try:
