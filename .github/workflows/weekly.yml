@@ -1,0 +1,54 @@
+name: Weekly AI News Digest
+
+on:
+  schedule:
+    # 일요일 21:00 UTC = 월요일 06:00 KST
+    - cron: "0 21 * * 0"
+  workflow_dispatch:  # 수동 트리거 허용
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: weekly-ai-news
+      cancel-in-progress: false
+    steps:
+      - name: Checkout agent
+        uses: actions/checkout@v4
+
+      - name: Checkout blog (with push token)
+        uses: actions/checkout@v4
+        with:
+          repository: altjs4510/ai_news_blog
+          token: ${{ secrets.BLOG_PUSH_TOKEN }}
+          path: ai_news_blog_repo
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up uv with Python 3.13
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Configure git author for blog commits
+        run: |
+          git -C ai_news_blog_repo config user.email "altjs4510@gmail.com"
+          git -C ai_news_blog_repo config user.name "cookie"
+
+      - name: Run agent (collect → summarize → publish)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+          BLOG_REPO_PATH: ${{ github.workspace }}/ai_news_blog_repo
+          BLOG_SITE_URL: https://altjs4510.github.io/ai_news_blog
+        run: uv run python main.py
