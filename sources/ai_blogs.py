@@ -45,6 +45,18 @@ DEV_AGENT_FEEDS = [
     ("https://github.com/crewAIInc/crewAI/releases.atom", "CrewAI Releases"),
     ("https://github.com/google/adk-python/releases.atom", "Google ADK Releases"),
     ("https://github.com/openai/openai-agents-python/releases.atom", "OpenAI Agents SDK Releases"),
+    # X 대체 — 큐레이션 뉴스레터 (트위터 담론 압축본)
+    ("https://tldr.tech/api/rss/ai", "TLDR AI"),
+    ("https://www.therundown.ai/feed", "The Rundown AI"),
+    ("https://alphasignal.ai/feed", "AlphaSignal"),
+    ("https://www.bensbites.com/feed", "Ben's Bites"),
+    ("https://www.deeplearning.ai/the-batch/feed/", "Andrew Ng — The Batch"),
+    # 개인 엔지니어링 블로그 (고신호)
+    ("https://karpathy.bearblog.dev/feed/", "Karpathy"),
+    ("https://lilianweng.github.io/index.xml", "Lilian Weng"),
+    ("https://eugeneyan.com/rss/", "Eugene Yan"),
+    ("https://huyenchip.com/feed.xml", "Chip Huyen"),
+    ("https://hamel.dev/index.xml", "Hamel Husain"),
 ]
 
 

@@ -1,15 +1,22 @@
 import os
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+KST = ZoneInfo("Asia/Seoul")
+
 
 class MarkdownWriter:
-    def __init__(self):
+    def __init__(self, date_str: str | None = None):
+        # main.py가 KST 기준 date_str을 만들어 넘기는 것을 우선 사용한다.
+        # 인자가 없으면 KST 기준 오늘 날짜로 계산해 GitHub Actions(UTC) 환경과
+        # main.py(KST) 간 디렉토리 불일치를 방지한다.
+        self.date_str = date_str or datetime.now(KST).strftime("%Y%m%d")
         self.base_dir = self._create_report_directory()
 
     def _create_report_directory(self):
         """오늘 날짜의 리포트 디렉토리를 생성합니다."""
-        today = datetime.now().strftime('%Y%m%d')
-        base_dir = Path('reports') / today
+        base_dir = Path("reports") / self.date_str
         base_dir.mkdir(parents=True, exist_ok=True)
         return base_dir
 
