@@ -476,9 +476,8 @@ async def summarize_combined_insights(
 
         client = Anthropic()
         message = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-opus-4-7",
             max_tokens=15000,
-            temperature=0.3,
             messages=[{
                 "role": "user",
                 "content": prompt
@@ -568,9 +567,8 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
         # Claude API 호출
         client = Anthropic()
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-opus-4-7",
             max_tokens=6000,
-            temperature=0.2,
             system="너는 AI 뉴스 분석과 요약을 전문으로 하는 Assistant입니다. 주어진 콘텐츠에서 핵심 내용을 파악하고 출처 링크를 포함해 정확하게 요약합니다. 응답은 항상 단일 JSON 객체여야 합니다.",
             messages=[{"role": "user", "content": prompt}]
         )
