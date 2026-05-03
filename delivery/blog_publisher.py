@@ -152,15 +152,20 @@ class BlogPublisher:
             "---\n"
             'title: "AI News Digest"\n'
             "---\n\n"
-            "AI 동향을 자동 수집·요약해 매주 발행하는 블로그입니다.\n"
-            "수집 소스: Anthropic / OpenAI / Google AI 공식 블로그, GitHub Trending, Reddit (AI 서브레딧).\n"
-            "수집·번역·요약은 Anthropic Claude 모델이 담당합니다.\n\n"
-            f"## 가장 최근 발행: [{display_date}](posts/{date_str}/)\n\n"
+            "> [!info] 매주 월요일 자동 발행\n"
+            "> 지난 7일치 AI 동향을 공식 블로그·커뮤니티·뉴스·학술·오픈소스에서 수집해, "
+            "Anthropic Claude로 통합 인사이트를 만든 뒤 자동으로 발행합니다.\n\n"
+            "**수집 소스** — Anthropic·OpenAI·Google·DeepMind 공식 블로그, "
+            "Reddit (AI 서브레딧), Hacker News, Product Hunt, TechCrunch AI, "
+            "arxiv (cs.AI/cs.CL), HuggingFace Papers, GitHub Trending. "
+            "([자세히](about))\n\n"
+            f"## 📰 가장 최근: [{display_date}](posts/{date_str}/)\n\n"
         )
         body = summary_body.strip() if summary_body else "_(이번 호는 요약 생성에 실패했습니다.)_"
         archive = (
             "\n\n---\n\n"
-            "[📚 발행 아카이브 전체 보기](posts/)\n"
+            "📚 [발행 아카이브 전체 보기](posts/) · "
+            "🛰 [RSS 구독](index.xml)\n"
         )
         (self.blog_repo / "content" / "index.md").write_text(intro + body + archive, encoding="utf-8")
 
