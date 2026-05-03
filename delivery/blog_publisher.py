@@ -80,19 +80,18 @@ class BlogPublisher:
                 summary_path.read_text(encoding="utf-8")
             ).strip()
 
-        reddit_insights_path = src / "reddit_insights.md"
-        reddit_insights_body = ""
-        if reddit_insights_path.exists():
-            text = reddit_insights_path.read_text(encoding="utf-8")
+        combined_path = src / "combined_insights.md"
+        combined_body = ""
+        if combined_path.exists():
+            text = combined_path.read_text(encoding="utf-8")
             text = _strip_existing_frontmatter(text)
-            text = _strip_leading_h1(text)
-            reddit_insights_body = text.strip()
+            combined_body = text.strip()
 
         sections = []
         if summary_body:
             sections.append(summary_body)
-        if reddit_insights_body:
-            sections.append("## 🧵 Reddit 깊이 분석\n\n" + reddit_insights_body)
+        if combined_body:
+            sections.append(combined_body)
         sections.append("---\n\n📂 [원본 수집 데이터 펼쳐보기](raw)")
 
         if sections:

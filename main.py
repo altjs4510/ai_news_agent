@@ -30,8 +30,6 @@ def _read_or_empty(path: str) -> str:
 
 
 def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight, summary, keywords) -> None:
-    if not summary:
-        return
     display_date = datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
     keywords_line = " · ".join(f"`{k}`" for k in (keywords or []))
     lines = [
@@ -60,12 +58,6 @@ def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight
         ]
     if keywords_line:
         lines += [f"> [!info] 이번 호 키워드", f"> {keywords_line}", ""]
-    for cat in summary if isinstance(summary, list) else []:
-        lines.append(f"## {cat.get('title', '')}")
-        lines.append("")
-        for item in cat.get("items", []) or []:
-            lines.append(f"- {item}")
-        lines.append("")
     os.makedirs(report_path, exist_ok=True)
     with open(f"{report_path}/summary.md", "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
@@ -156,10 +148,6 @@ async def main():
         translated_posts = await translate_contents_batch(relevant_posts)
         markdown_writer._save_reddit_contents(translated_posts)
         
-        # Reddit 인사이트 생성
-        logger.info("인사이트 추출 중...")
-        reddit_insights_path = await summarize_reddit_insights()
-        
         # 공통 컨텐츠 로드
         today = datetime.now()
         date_str = today.strftime("%Y%m%d")
@@ -167,18 +155,22 @@ async def main():
 
         aitimes_content = _read_or_empty(f"{report_path}/aitimes_raw.md")
         youtube_content = _read_or_empty(f"{report_path}/youtube_raw.md")
-        reddit_insights = _read_or_empty(f"{report_path}/reddit_insights.md")
-
-        summary, keywords = None, None
+        reddit_translated_content = _read_or_empty(f"{report_path}/reddit_translated.md")
         github_content = _read_or_empty(f"{report_path}/github_raw.md")
         ai_blogs_content = _read_or_empty(f"{report_path}/ai_blogs_raw.md")
 
+        # 통합 인사이트 (모든 소스 종합)
+        logger.info("통합 인사이트 추출 중...")
+        await summarize_combined_insights(ai_blogs_content, github_content, reddit_translated_content)
+        combined_insights = _read_or_empty(f"{report_path}/combined_insights.md")
+
+        summary, keywords = None, None
         headline = ""
         spotlight = None
         if ENABLE_BLOG or ENABLE_NOTION:
             try:
                 headline, spotlight, summary, keywords = await generate_summary_and_keywords(
-                    aitimes_content, youtube_content, reddit_insights, github_content, ai_blogs_content
+                    aitimes_content, youtube_content, combined_insights, github_content, ai_blogs_content
                 )
                 _write_summary_markdown(report_path, date_str, headline, spotlight, summary, keywords)
             except Exception as e:
@@ -384,59 +376,70 @@ async def clean_textblock_from_file(filepath):
         logger.error(f"TextBlock 제거 중 오류 발생: {str(e)}")
         return False
 
-async def summarize_reddit_insights():
-    """Reddit 번역본에서 실용적인 인사이트를 추출합니다."""
+async def summarize_combined_insights(ai_blogs_content: str, github_content: str, reddit_translated_content: str):
+    """모든 수집 소스(AI 블로그·GitHub Trending·Reddit)를 종합한 인사이트 마크다운을 생성합니다."""
     try:
-        logger.info("Reddit 포스트 인사이트 추출 중...")
-        
+        logger.info("통합 인사이트 추출 시작")
         writer = MarkdownWriter()
-        report_dir = writer.get_report_path()
-        
-        # 원본 포스트와 번역본 읽기
-        with open(f"{report_dir}/reddit_translated.md", 'r', encoding='utf-8') as f:
-            translated_content = f.read()
 
-        # 번역된 포스트 분리
-        posts = [post.strip() for post in translated_content.split("---") if post.strip()]
-        logger.info(f"총 {len(posts)}개의 포스트 분석 시작...")
+        prompt = f"""다음은 이번 주 AI 관련 자료입니다. 모든 자료를 종합 분석해서 가독성 좋은 마크다운 인사이트 글을 작성해주세요.
 
-        prompt = f"""다음은 Reddit에서 수집한 AI 관련 포스트들입니다. 포스트들을 분석하여 주요 주제별로 실용적인 인사이트를 추출해주세요.
+==== AI 공식 블로그 (Anthropic / OpenAI / Google) ====
+{ai_blogs_content[:6000]}
 
-특히 다음과 같은 주제들을 중심으로 분석해주세요:
-1. 구현 기술과 방법론
-2. 성능 최적화와 문제 해결
-3. 도구와 리소스
-4. 실제 사용 사례와 경험
-5. 주의사항과 제한사항
+==== GitHub Trending (이번 주 인기 오픈소스) ====
+{github_content[:3500]}
 
-포스트들:
-{translated_content}
+==== Reddit AI 커뮤니티 (한국어 번역본) ====
+{reddit_translated_content[:9000]}
 
-다음 형식으로 작성해주세요:
+## 작성 규칙 (반드시 지키세요)
+
+1. 자료에 등장한 마크다운 링크 [텍스트](URL)는 본문에 그대로 인용합니다. 자료에 없는 URL은 절대 만들지 마세요.
+2. 각 단락은 **2~3문장**으로 짧게 끊습니다. 줄글이 길게 이어지면 안 됩니다.
+3. 핵심 단어·제품명·회사명·개념은 **굵게** 강조합니다.
+4. 단락 사이에는 빈 줄을 둡니다.
+5. "이번 호", "수집된 자료" 같은 메타 멘트, 인사말, 결론 멘트는 금지합니다.
+6. 출력은 순수 마크다운입니다. ```` ``` ```` 코드블록으로 감싸지 마세요.
+
+## 출력 형식
 
 # 전체 요약
-(수집된 포스트들의 전반적인 트렌드와 핵심 인사이트를 3-4줄로 요약)
 
-# 주제별 상세 분석
-## [주제 1]
-- 관련 포스트:
-  - [포스트 제목 1](출처 URL)
-  - [포스트 제목 2](출처 URL)
-- 핵심 인사이트:
-  (이 주제와 관련된 포스트들의 내용을 종합적으로 분석한 인사이트)
+(2~3 단락. 각 단락 2~3문장. 이번 주 AI 동향의 핵심 흐름을 명확하게 짚어줍니다.)
 
-## [주제 2]
-...
+---
 
-(각 주제는 2개 이상의 포스트가 관련되어 있을 때만 포함하고, 
-개별 포스트의 독특한 인사이트는 별도 섹션에서 다루어주세요)
+# 주제별 분석
 
-# 개별 포스트 주요 발견
-## [포스트 제목]
-- 출처: [원본 링크]
-- 주요 발견: (다른 포스트에서 다루지 않은 독특한 인사이트나 중요한 정보)
+## 1. (주제명을 한 줄로 명확하게)
 
-(이 섹션은 주제별 분석에서 충분히 다루지 못한 중요한 개별 인사이트가 있는 경우에만 포함)"""
+**관련 자료**
+
+- [제목](URL)
+- [제목](URL)
+
+**핵심 인사이트**
+
+(2~3 단락. 각 단락 2~3문장. 단락 사이 빈 줄.)
+
+## 2. (...)
+
+(같은 구조)
+
+(주제는 3~5개. 각 주제는 자료가 2개 이상 관련된 경우만 다룹니다. 출처는 모든 소스(AI 블로그·GitHub·Reddit)에서 자유롭게 인용합니다.)
+
+---
+
+# 주목할 만한 개별 발견
+
+## (항목 제목 — 짧게)
+
+- 출처: [링크](URL)
+
+(1~2 단락의 독특한 인사이트. 주제별 분석에서 다루지 못한 단발성 정보만.)
+
+(2~4개)"""
 
         client = Anthropic()
         message = client.messages.create(
@@ -458,41 +461,17 @@ async def summarize_reddit_insights():
             logger.warning(f"Unexpected Anthropic API response format: {type(message.content)}")
             insights = ""
         
-        # 응답에서 TextBlock 형식이 있는지 확인 (이제 insights는 문자열)
-        # TextBlock 메타데이터 제거 (이제 필요 없을 수 있지만 안전하게 남겨둠)
-        insights = insights.replace("[TextBlock(citations=None, text='", "")
-        insights = insights.replace("', type='text')]", "")
-        insights = insights.replace('\\n', '\n')  # 이중 이스케이프된 줄바꿈 처리
-        insights = insights.replace('\n', '\n')    # 단일 이스케이프된 줄바꿈 처리
-        
-        # 최종 마크다운 생성
-        final_content = f"""# Reddit AI 개발 인사이트 모음
-생성 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        insights = insights.strip()
+        # 코드 블록으로 감싸서 응답이 오면 제거
+        insights = re.sub(r"^```[a-zA-Z]*\n", "", insights)
+        insights = re.sub(r"\n```$", "", insights)
 
-{insights.strip()}"""
-        
-        # 파일 저장
-        filepath = writer.save_markdown(final_content, "reddit_insights.md")
-        
-        # 저장된 파일 확인 및 TextBlock 재확인
-        with open(filepath, 'r', encoding='utf-8') as f:
-            saved_content = f.read()
-            if '[TextBlock(' in saved_content:
-                # TextBlock이 여전히 있다면 다시 한번 정리
-                cleaned_content = saved_content.replace('[TextBlock(citations=None, text=\'', '')
-                cleaned_content = cleaned_content.replace('\', type=\'text\')]', '')
-                cleaned_content = cleaned_content.replace('\\\\n', '\n')
-                cleaned_content = cleaned_content.replace('\\n', '\n')
-                
-                # 깨끗한 내용으로 다시 저장
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    f.write(cleaned_content)
-        
-        logger.info(f"Reddit 인사이트 저장 완료: {filepath}")
+        filepath = writer.save_markdown(insights, "combined_insights.md")
+        logger.info(f"통합 인사이트 저장 완료: {filepath}")
         return filepath
 
     except Exception as e:
-        logger.error(f"Reddit 인사이트 추출 실패: {str(e)}", exc_info=True)
+        logger.error(f"통합 인사이트 추출 실패: {str(e)}", exc_info=True)
         return None
 
 async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit_insights, github_content="", ai_blogs_content=""):
@@ -536,19 +515,9 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
    - why: 왜 주목할 만한지 1~2문장
    - application: ai_news_agent의 어떤 부분(수집기, 번역, 요약, 발행, 운영)에 어떻게 접목할지 구체적 제안 1~2문장
 
-3. **summary 카테고리 3~4개** — 다음 중에서 선택:
-   - 지금 바로 실험해볼만한 도구/기능
-   - 전략적으로 중요한 흐름
-   - AI 에이전트 실전 운영 인사이트
-   - 나중에 참고할만한 아이디어
+3. **keywords 5개** — 이번 호 핵심 주제 (각 2~3 단어).
 
-4. **각 카테고리 3~5개 item**. 각 item은 한 줄 마크다운 문자열로:
-   `**[이름](URL)** — 1~2문장 설명.`
-   형식을 반드시 지키세요. 이름은 짧고 구체적인 명사(저장소·제품·회사·사람), 본문은 em dash(—) 뒤로 1~2문장. 시작에 카테고리 어울리는 이모지 1개. URL은 자료에 등장한 것만 사용.
-
-5. **keywords 5개** — 이번 호 핵심 주제 (각 2~3 단어).
-
-6. 인사말·결론 멘트 금지. spotlight와 summary는 서로 중복되지 않게 합니다(spotlight 항목을 summary에 또 넣지 마세요).
+4. 인사말·결론 멘트 금지.
 
 ## 응답 형식 (JSON, 다른 텍스트 금지)
 {{
@@ -559,9 +528,6 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
     "why": "...",
     "application": "..."
   }},
-  "summary": [
-    {{"title": "🛠️ 카테고리 제목", "items": ["**[이름](URL)** — 설명.", "..."]}}
-  ],
   "keywords": ["...", "...", "...", "...", "..."]
 }}"""
 
@@ -588,11 +554,11 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
             result_json = json.loads(json_str)
             headline = result_json.get('headline', '')
             spotlight = result_json.get('spotlight') or None
-            summary = result_json.get('summary', [])
+            summary = result_json.get('summary', [])  # legacy, 더 이상 사용 안 함
             keywords = result_json.get('keywords', [])
 
-            if not summary:
-                raise ValueError("요약이 생성되지 않았습니다.")
+            if not headline and not spotlight:
+                raise ValueError("헤드라인/스포트라이트가 생성되지 않았습니다.")
             if not keywords or len(keywords) < 5:
                 raise ValueError("키워드가 충분히 생성되지 않았습니다.")
 
