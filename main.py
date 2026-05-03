@@ -13,8 +13,11 @@ from delivery.email_sender import EmailSender
 from delivery.blog_publisher import BlogPublisher
 from utils.logger import setup_logger
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import anthropic
 from anthropic import Anthropic, AsyncAnthropic
+
+KST = ZoneInfo("Asia/Seoul")
 from utils.html_cleaner import clean_markdown_file
 import re
 import traceback
@@ -178,7 +181,7 @@ async def main():
         markdown_writer._save_reddit_contents(translated_posts)
         
         # 공통 컨텐츠 로드
-        today = datetime.now()
+        today = datetime.now(KST)
         date_str = today.strftime("%Y%m%d")
         report_path = f"reports/{date_str}"
 
