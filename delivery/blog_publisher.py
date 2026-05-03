@@ -12,7 +12,6 @@ logger = setup_logger('blog_publisher')
 RAW_SOURCES = [
     ("AI 공식 블로그 (Anthropic / OpenAI / Google)", "ai_blogs_raw.md"),
     ("GitHub Trending (이번 주 인기 오픈소스)", "github_raw.md"),
-    ("Reddit 인사이트", "reddit_insights.md"),
     ("Reddit 원문 목록", "reddit_raw.md"),
     ("Reddit 번역본 (전문)", "reddit_translated.md"),
     ("AI Times", "aitimes_raw.md"),
@@ -73,22 +72,37 @@ class BlogPublisher:
 
         display_date = datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
 
-        # 1) 메인 페이지 = summary 본문
+        # 1) 메인 페이지 = summary 본문 + Reddit 깊이 분석
         summary_path = src / "summary.md"
         summary_body = ""
         if summary_path.exists():
-            raw = summary_path.read_text(encoding="utf-8")
-            summary_body = _strip_existing_frontmatter(raw).strip()
+            summary_body = _strip_existing_frontmatter(
+                summary_path.read_text(encoding="utf-8")
+            ).strip()
 
+        reddit_insights_path = src / "reddit_insights.md"
+        reddit_insights_body = ""
+        if reddit_insights_path.exists():
+            text = reddit_insights_path.read_text(encoding="utf-8")
+            text = _strip_existing_frontmatter(text)
+            text = _strip_leading_h1(text)
+            reddit_insights_body = text.strip()
+
+        sections = []
         if summary_body:
+            sections.append(summary_body)
+        if reddit_insights_body:
+            sections.append("## 🧵 Reddit 깊이 분석\n\n" + reddit_insights_body)
+        sections.append("---\n\n📂 [원본 수집 데이터 펼쳐보기](raw)")
+
+        if sections:
             index_md = (
                 "---\n"
                 f'title: "{display_date} AI 동향 요약"\n'
                 f"date: {display_date}\n"
                 "---\n\n"
-                f"{summary_body}\n\n"
-                "---\n\n"
-                f"📂 [원본 수집 데이터 펼쳐보기](raw)\n"
+                + "\n\n---\n\n".join(sections)
+                + "\n"
             )
         else:
             index_md = (
