@@ -29,21 +29,22 @@ def _read_or_empty(path: str) -> str:
         return ""
 
 
-def _write_summary_markdown(report_path: str, date_str: str, summary, keywords) -> None:
+def _write_summary_markdown(report_path: str, date_str: str, headline, summary, keywords) -> None:
     if not summary:
         return
     display_date = datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
+    keywords_line = " · ".join(f"`{k}`" for k in (keywords or []))
     lines = [
         "---",
         f'title: "{display_date} 요약"',
         f"date: {display_date}",
         "---",
         "",
-        "## 키워드",
-        "",
-        " · ".join(f"`{k}`" for k in (keywords or [])),
-        "",
     ]
+    if headline:
+        lines += [f"> [!tldr] TL;DR", f"> {headline}", ""]
+    if keywords_line:
+        lines += [f"> [!info] 이번 호 키워드", f"> {keywords_line}", ""]
     for cat in summary if isinstance(summary, list) else []:
         lines.append(f"## {cat.get('title', '')}")
         lines.append("")
@@ -157,12 +158,13 @@ async def main():
         github_content = _read_or_empty(f"{report_path}/github_raw.md")
         ai_blogs_content = _read_or_empty(f"{report_path}/ai_blogs_raw.md")
 
+        headline = ""
         if ENABLE_BLOG or ENABLE_NOTION:
             try:
-                summary, keywords = await generate_summary_and_keywords(
+                headline, summary, keywords = await generate_summary_and_keywords(
                     aitimes_content, youtube_content, reddit_insights, github_content, ai_blogs_content
                 )
-                _write_summary_markdown(report_path, date_str, summary, keywords)
+                _write_summary_markdown(report_path, date_str, headline, summary, keywords)
             except Exception as e:
                 logger.error(f"요약/키워드 생성 실패: {e}")
 
@@ -482,104 +484,83 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
     logger.info("요약 및 키워드 생성 시작")
 
     # 요약을 위한 프롬프트 생성
-    prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, AI Times, YouTube 영상 자료입니다. 이를 바탕으로 아래 기준에 따라 정리하고 주요 키워드 5개를 추출해주세요.
+    prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, AI Times, YouTube 영상 자료입니다. 이를 바탕으로 아래 기준에 따라 정리해주세요.
 
-공식 AI 블로그:
-{ai_blogs_content[:3500]}  # 핵심 발표 위주
+자료의 각 항목에는 [텍스트](URL) 형태의 마크다운 링크가 포함되어 있으니, 인용할 때 그 URL을 그대로 본문에 가져다 쓰세요.
 
-Reddit 인사이트:
-{reddit_insights[:4000]}  # 커뮤니티 토픽
+==== 공식 AI 블로그 ====
+{ai_blogs_content[:3500]}
 
-GitHub Trending (이번 주 인기 오픈소스):
+==== Reddit 인사이트 ====
+{reddit_insights[:4000]}
+
+==== GitHub Trending (이번 주) ====
 {github_content[:3000]}
 
-AI Times 뉴스:
+==== AI Times ====
 {aitimes_content[:2000]}
 
-YouTube 영상:
+==== YouTube ====
 {youtube_content[:2000]}
 
-## 요약 목표
-- AI 트렌드를 빠르게 파악하고, 실행 가능한 인사이트를 뽑아내는 것
+## 작성 규칙 (반드시 지키세요)
 
-## 요약 분류 기준
-- 다음 세 가지 범주 중 하나로 분류하고 각 범주별로 2~4개의 핵심 포인트를 불릿 포인트로 작성하세요:
-    1. 지금 바로 실험해볼만한 도구/기능
-        - 신기능, API, 공개된 툴 등
-        - 실무에 적용하거나 데모해볼 수 있는 아이디어
-    2. 전략적으로 중요한 흐름
-        - 산업 변화, 기업 정책, 기술 방향성
-        - 향후 AI 관련 결정에 영향을 줄 수 있는 트렌드
-    3. 나중에 참고할만한 아이디어
-        - 흥미롭지만 당장 실행하긴 어려운 개념, 이론, 논쟁
-        - 장기적으로 체크하거나 기록해두면 좋을 정보
-        
-다음 JSON 형식으로 응답해주세요:
+1. **헤드라인 1줄**: 이번 호 전체를 관통하는 핵심 흐름을 한 문장으로 요약하세요. 80자 내외.
+2. **카테고리 3~4개**: 다음 중에서 골라 사용하세요.
+   - 지금 바로 실험해볼만한 도구/기능
+   - 전략적으로 중요한 흐름
+   - AI 에이전트 실전 운영 인사이트
+   - 나중에 참고할만한 아이디어
+3. **각 카테고리당 3~5개 불릿**.
+4. **각 불릿은 반드시 [텍스트](URL) 마크다운 링크를 1개 이상 포함**합니다. URL은 위 자료에 등장한 것만 사용하고, 절대 임의로 만들지 마세요. 자료에 마땅한 URL이 없으면 그 항목은 작성하지 마세요.
+5. 불릿 시작에 카테고리에 어울리는 이모지 1개를 붙여 시각적으로 구분합니다.
+6. 인사말·결론 멘트 없이 본문만 작성합니다.
+7. **키워드 5개**: 이번 호의 핵심 주제 (각 2~3 단어).
+
+## 응답 형식 (JSON, 다른 텍스트 금지)
 {{
-    "summary": [
-        {{
-            "title": "주요 카테고리 제목1", 
-            "items": [
-                "상세 내용 포인트 1", 
-                "상세 내용 포인트 2", 
-                "상세 내용 포인트 3"
-            ]
-        }},
-        {{
-            "title": "주요 카테고리 제목2", 
-            "items": [
-                "상세 내용 포인트 1", 
-                "상세 내용 포인트 2"
-            ]
-        }},
-        {{
-            "title": "주요 카테고리 제목3", 
-            "items": [
-                "상세 내용 포인트 1", 
-                "상세 내용 포인트 2", 
-                "상세 내용 포인트 3", 
-                "상세 내용 포인트 4"
-            ]
-        }}
-    ],
-    "keywords": ["키워드1", "키워드2", "키워드3", "키워드4", "키워드5"]
-}}
-
-요약은 4~5개의 주요 카테고리로 나누고, 각 카테고리별로 2~4개의 핵심 포인트를 불릿 포인트로 작성하세요.
-주요 카테고리는 AI 모델 발전, 에이전트 플랫폼, AI 활용 사례, 안전성/윤리, 기술 동향 등이 될 수 있습니다.
-키워드는 현재 가장 주목받는 기술, 제품, 이슈 등을 나타내는 짧은 단어나 구문(최대 2-3단어)이어야 합니다."""
+  "headline": "한 문장 헤드라인",
+  "summary": [
+    {{"title": "카테고리 제목", "items": ["- 형식 없이 본문 마크다운만 (링크 포함)", "..."]}}
+  ],
+  "keywords": ["키워드1", "키워드2", "키워드3", "키워드4", "키워드5"]
+}}"""
 
     try:
         # Claude API 호출
         client = Anthropic()
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=2000,
+            max_tokens=6000,
             temperature=0.2,
-            system="너는 AI 뉴스 분석과 요약을 전문으로 하는 Assistant입니다. 주어진 콘텐츠에서 핵심 내용을 파악하고 간결하게 요약합니다.",
+            system="너는 AI 뉴스 분석과 요약을 전문으로 하는 Assistant입니다. 주어진 콘텐츠에서 핵심 내용을 파악하고 출처 링크를 포함해 정확하게 요약합니다. 응답은 항상 단일 JSON 객체여야 합니다.",
             messages=[{"role": "user", "content": prompt}]
         )
-        
-        # 응답에서 JSON 형식 추출
+
+        # 응답에서 JSON 형식 추출 (코드 블록 제거 후 첫 { ~ 마지막 })
         result_text = response.content[0].text
-        logger.info(f"응답: {result_text}")
-        # JSON 형식 찾기
-        json_match = re.search(r'({.*})', result_text.replace('\n', ''))
-        if json_match:
-            result_json = json.loads(json_match.group(1))
+        logger.info(f"응답 길이: {len(result_text)}")
+        cleaned = re.sub(r"^```(?:json)?\s*", "", result_text.strip())
+        cleaned = re.sub(r"\s*```\s*$", "", cleaned)
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start >= 0 and end > start:
+            json_str = cleaned[start : end + 1]
+            result_json = json.loads(json_str)
+            headline = result_json.get('headline', '')
             summary = result_json.get('summary', [])
             keywords = result_json.get('keywords', [])
-            
+
             if not summary:
                 raise ValueError("요약이 생성되지 않았습니다.")
             if not keywords or len(keywords) < 5:
                 raise ValueError("키워드가 충분히 생성되지 않았습니다.")
-                
+
+            logger.info(f"헤드라인: {headline}")
             logger.info(f"요약 생성 완료: {len(summary)}개 카테고리")
             logger.info(f"키워드 생성 완료: {keywords}")
-            return summary, keywords
-        else:
-            raise ValueError("JSON 형식으로 응답이 오지 않았습니다.")
+            return headline, summary, keywords
+        raise ValueError("JSON 형식으로 응답이 오지 않았습니다.")
     
     except Exception as e:
         logger.error(f"요약 및 키워드 생성 중 오류 발생: {str(e)}")
