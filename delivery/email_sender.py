@@ -169,9 +169,8 @@ if __name__ == "__main__":
             keywords = ["AI", "테스트"]
             summary = [{"title": "테스트", "items": ["테스트 데이터입니다."]}]
         
-        # Reddit 인사이트 파일 URL
-        reddit_file = os.path.join(reports_dir, "reddit_insights.md")
-        reddit_url = f"https://dashff.fnf.co.kr/{date_str}/reddit_insights.md" if os.path.exists(reddit_file) else None
+        # Reddit 인사이트 파일 URL (테스트 시에는 별도 호스팅 URL 미사용)
+        reddit_url = None
         
         # 테스트용 페이지 ID (실제로는 노션에서 생성된 ID를 사용)
         test_page_id = "test-page-id"

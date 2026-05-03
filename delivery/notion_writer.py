@@ -344,7 +344,7 @@ class NotionWriter:
             
             # S3 키 생성 (지정된 경로 사용)
             date_str = datetime.now().strftime('%Y%m%d')
-            s3_key = f"COOKIE/REDDIT_INSIGHT/{date_str}_reddit_insights.md"
+            s3_key = f"reddit_insights/{date_str}_reddit_insights.md"
             
             # 파일 업로드
             logger.info(f"S3 업로드 시작: {file_path} -> s3://{self.bucket_name}/{s3_key}")

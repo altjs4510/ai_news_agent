@@ -54,17 +54,31 @@ uv pip install -r requirements.txt
 ```
 
 4. 환경 변수 설정
-`.env` 파일에 다음 항목들을 설정해야 합니다:
+프로젝트 루트에 `.env` 파일을 만들고 다음 항목들을 설정합니다:
 ```
+# --- LLM / 소스 API ---
 OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
 YOUTUBE_API_KEY=your_youtube_api_key
-NOTION_API_KEY=your_notion_api_key
+REDDIT_CLIENT_ID=your_reddit_client_id
+REDDIT_CLIENT_SECRET=your_reddit_client_secret
+REDDIT_USER_AGENT=your_reddit_user_agent
+
+# --- Notion ---
+NOTION_TOKEN=your_notion_integration_token
 NOTION_DATABASE_ID=your_notion_database_id
-AWS_ACCESS_KEY_ID=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-AWS_REGION=your_aws_region
-S3_BUCKET_NAME=your_s3_bucket_name
+
+# --- S3 (또는 S3 호환 객체 저장소: Cloudflare R2, Backblaze B2 등) ---
+S3_ACCESS_KEY=your_access_key
+S3_SECRET_KEY=your_secret_key
+S3_BUCKET_NAME=your_bucket_name
+
+# --- 이메일 알림 (선택, 미설정 시 스킵) ---
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your@email.com
+SMTP_PASSWORD=your_app_password
+SMTP_TO=recipient1@example.com,recipient2@example.com
 ```
 
 ## 사용 방법
