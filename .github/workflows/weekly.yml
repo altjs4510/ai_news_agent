@@ -29,14 +29,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Set up uv with Python 3.13
+      - name: Set up uv
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-          python-version: "3.13"
+          cache-dependency-glob: "pyproject.toml"
 
-      - name: Install dependencies
-        run: uv sync
+      - name: Install Python 3.13 and dependencies
+        run: |
+          uv python install 3.13
+          uv sync
 
       - name: Configure git author for blog commits
         run: |
