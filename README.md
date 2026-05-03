@@ -1,6 +1,8 @@
 # AI 뉴스 수집 에이전트
 
-AI 동향과 관련된 다양한 소스에서 뉴스를 자동으로 수집하고, 번역, 요약 및 인사이트를 추출하여 Notion 페이지에 게시하는 자동화 도구입니다.
+AI 동향을 다양한 소스에서 자동 수집·번역·요약·인사이트화하고, 결과를 [ai_news_blog](https://github.com/altjs4510/ai_news_blog) (Quartz / GitHub Pages) 로 자동 발행하는 도구입니다.
+
+게시 사이트: https://altjs4510.github.io/ai_news_blog
 
 ## 주요 기능
 
@@ -8,8 +10,9 @@ AI 동향과 관련된 다양한 소스에서 뉴스를 자동으로 수집하�
 - **번역 및 요약**: 영어 콘텐츠를 한글로 번역하고, 핵심 내용 요약
 - **인사이트 추출**: Reddit 포스트에서 주제별로 실용적인 인사이트 추출
 - **자동 키워드 생성**: 수집된 콘텐츠에서 중요 키워드 추출
-- **Notion 자동 게시**: 수집, 번역, 요약된 내용을 Notion 페이지로 자동 생성
-- **스케줄링**: cron을 통한 정기적인 자동 실행
+- **블로그 자동 발행**: 결과 마크다운을 별도 블로그 레포에 commit·push → GitHub Actions가 Quartz로 빌드해 Pages에 배포
+- **Notion / 이메일 알림**: 옵션으로 활성화 가능 (`main.py`의 `ENABLE_NOTION`, `ENABLE_EMAIL`)
+- **스케줄링**: cron 또는 launchd를 통한 정기적인 자동 실행
 
 ## 디렉토리 구조
 
@@ -64,21 +67,32 @@ REDDIT_CLIENT_ID=your_reddit_client_id
 REDDIT_CLIENT_SECRET=your_reddit_client_secret
 REDDIT_USER_AGENT=your_reddit_user_agent
 
-# --- Notion ---
-NOTION_TOKEN=your_notion_integration_token
-NOTION_DATABASE_ID=your_notion_database_id
+# --- 블로그 발행 (필수, ai_news_blog 레포가 같은 부모 디렉토리에 clone되어 있다고 가정) ---
+# BLOG_REPO_PATH=/absolute/path/to/ai_news_blog   # 기본값: ../ai_news_blog
+# BLOG_SITE_URL=https://altjs4510.github.io/ai_news_blog
 
-# --- S3 (또는 S3 호환 객체 저장소: Cloudflare R2, Backblaze B2 등) ---
-S3_ACCESS_KEY=your_access_key
-S3_SECRET_KEY=your_secret_key
-S3_BUCKET_NAME=your_bucket_name
+# --- Notion (옵션, ENABLE_NOTION=True 일 때만) ---
+# NOTION_TOKEN=your_notion_integration_token
+# NOTION_DATABASE_ID=your_notion_database_id
 
-# --- 이메일 알림 (선택, 미설정 시 스킵) ---
-SMTP_SERVER=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your@email.com
-SMTP_PASSWORD=your_app_password
-SMTP_TO=recipient1@example.com,recipient2@example.com
+# --- S3 / S3 호환 객체 저장소 (옵션, NotionWriter가 reddit_insights 업로드에 사용) ---
+# S3_ACCESS_KEY=your_access_key
+# S3_SECRET_KEY=your_secret_key
+# S3_BUCKET_NAME=your_bucket_name
+
+# --- 이메일 알림 (옵션, ENABLE_EMAIL=True 일 때만) ---
+# SMTP_SERVER=smtp.gmail.com
+# SMTP_PORT=587
+# SMTP_USER=your@email.com
+# SMTP_PASSWORD=your_app_password
+# SMTP_TO=recipient1@example.com,recipient2@example.com
+```
+
+5. 블로그 레포 준비
+```bash
+cd ..
+git clone git@github-personal:altjs4510/ai_news_blog.git
+cd ai_news_agent
 ```
 
 ## 사용 방법
@@ -131,7 +145,7 @@ launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.ai-news.plist
 
 ## 결과 확인
 
-- **Notion**: 설정된 Notion 데이터베이스에서 생성된 페이지 확인
+- **블로그**: https://altjs4510.github.io/ai_news_blog/posts/YYYYMMDD/
 - **로그**: `logs/` 디렉토리에서 실행 로그 확인
 - **보고서**: `reports/날짜/` 디렉토리에서 생성된 마크다운 파일 확인
 

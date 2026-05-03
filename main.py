@@ -6,6 +6,7 @@ from sources.reddit import RedditCollector
 from delivery.markdown_writer import MarkdownWriter
 from delivery.notion_writer import NotionWriter
 from delivery.email_sender import EmailSender
+from delivery.blog_publisher import BlogPublisher
 from utils.logger import setup_logger
 import openai
 from datetime import datetime
@@ -18,6 +19,41 @@ import json
 
 logger = setup_logger('main')
 
+
+def _read_or_empty(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
+
+
+def _write_summary_markdown(report_path: str, date_str: str, summary, keywords) -> None:
+    if not summary:
+        return
+    display_date = datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
+    lines = [
+        "---",
+        f'title: "{display_date} 요약"',
+        f"date: {display_date}",
+        "---",
+        "",
+        "## 키워드",
+        "",
+        " · ".join(f"`{k}`" for k in (keywords or [])),
+        "",
+    ]
+    for cat in summary if isinstance(summary, list) else []:
+        lines.append(f"## {cat.get('title', '')}")
+        lines.append("")
+        for item in cat.get("items", []) or []:
+            lines.append(f"- {item}")
+        lines.append("")
+    os.makedirs(report_path, exist_ok=True)
+    with open(f"{report_path}/summary.md", "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
 async def main():
     """메인 실행 함수"""
     try:
@@ -27,6 +63,11 @@ async def main():
         ENABLE_AITIMES = False
         ENABLE_YOUTUBE = True
         ENABLE_REDDIT = True
+
+        # 출력 채널 활성화 설정
+        ENABLE_BLOG = True
+        ENABLE_NOTION = False
+        ENABLE_EMAIL = False
         
         # 수집기 초기화
         collectors = []
@@ -88,73 +129,64 @@ async def main():
         logger.info("인사이트 추출 중...")
         reddit_insights_path = await summarize_reddit_insights()
         
-        # Notion 페이지 생성
-        try:
-            notion_writer = NotionWriter()
-            
-            # 날짜 문자열 생성
-            today = datetime.now()
-            date_str = today.strftime("%Y%m%d")
-            report_path = f"reports/{date_str}"
-            
-            # 각 컨텐츠 읽기
-            with open(f"{report_path}/aitimes_raw.md", "r", encoding="utf-8") as f:
-                aitimes_content = f.read()
-            with open(f"{report_path}/youtube_raw.md", "r", encoding="utf-8") as f:
-                youtube_content = f.read()
-            with open(f"{report_path}/reddit_insights.md", "r", encoding="utf-8") as f:
-                reddit_insights = f.read()
-                
-            # 요약 및 키워드 자동 생성
-            summary, keywords = await generate_summary_and_keywords(aitimes_content, youtube_content, reddit_insights)
-            
-            # Notion 페이지 생성
-            page_id = notion_writer.create_ai_news_page(
-                date_str=date_str,
-                keywords=keywords,
-                summary=summary,
-                aitimes_content=aitimes_content,
-                youtube_content=youtube_content,
-                reddit_insights=reddit_insights
-            )
-            logger.info(f"Notion 페이지가 생성되었습니다. Page ID: {page_id}")
-            
-            # 이메일 발송
+        # 공통 컨텐츠 로드
+        today = datetime.now()
+        date_str = today.strftime("%Y%m%d")
+        report_path = f"reports/{date_str}"
+
+        aitimes_content = _read_or_empty(f"{report_path}/aitimes_raw.md")
+        youtube_content = _read_or_empty(f"{report_path}/youtube_raw.md")
+        reddit_insights = _read_or_empty(f"{report_path}/reddit_insights.md")
+
+        summary, keywords = None, None
+        if ENABLE_BLOG or ENABLE_NOTION:
+            try:
+                summary, keywords = await generate_summary_and_keywords(
+                    aitimes_content, youtube_content, reddit_insights
+                )
+                _write_summary_markdown(report_path, date_str, summary, keywords)
+            except Exception as e:
+                logger.error(f"요약/키워드 생성 실패: {e}")
+
+        blog_url = None
+        if ENABLE_BLOG:
+            try:
+                publisher = BlogPublisher()
+                blog_url = publisher.publish(report_path, date_str)
+                if blog_url:
+                    logger.info(f"블로그 publish 완료: {blog_url}")
+            except Exception as e:
+                logger.error(f"블로그 publish 중 오류 발생: {str(e)}")
+
+        page_id = None
+        if ENABLE_NOTION:
+            try:
+                notion_writer = NotionWriter()
+                page_id = notion_writer.create_ai_news_page(
+                    date_str=date_str,
+                    keywords=keywords or [],
+                    summary=summary or [],
+                    aitimes_content=aitimes_content,
+                    youtube_content=youtube_content,
+                    reddit_insights=reddit_insights
+                )
+                logger.info(f"Notion 페이지가 생성되었습니다. Page ID: {page_id}")
+            except Exception as e:
+                logger.error(f"Notion 페이지 생성 중 오류 발생: {str(e)}")
+
+        if ENABLE_EMAIL and page_id:
             try:
                 logger.info("이메일 알림 발송 중...")
                 email_sender = EmailSender()
-                
-                # Reddit 인사이트 파일 URL (S3 업로드)
-                reddit_url = None
-                reddit_file_path = f"{report_path}/reddit_insights.md"
-                if os.path.exists(reddit_file_path):
-                    # NotionWriter의 S3 업로드 메서드 사용
-                    file_url = notion_writer._upload_file_to_s3(reddit_file_path)
-                    if file_url:
-                        reddit_url = file_url
-                        logger.info(f"Reddit 파일 S3 업로드 완료: {file_url}")
-                    else:
-                        logger.warning("S3 업로드 실패, 로컬 파일 경로 사용")
-                        reddit_url = f"file://{reddit_file_path}"
-                
-                email_result = email_sender.send_notion_page_notification(
+                email_sender.send_notion_page_notification(
                     date_str=date_str,
                     page_id=page_id,
-                    summary=summary,
-                    keywords=keywords,
-                    reddit_url=reddit_url
+                    summary=summary or [],
+                    keywords=keywords or [],
+                    reddit_url=blog_url,
                 )
-                
-                if email_result:
-                    logger.info("✅ 이메일 알림 발송 완료!")
-                else:
-                    logger.warning("⚠️ 이메일 알림 발송 실패 (설정 확인 필요)")
-                    
             except Exception as email_error:
-                logger.error(f"❌ 이메일 발송 중 오류 발생: {str(email_error)}")
-            
-        except Exception as e:
-            logger.error(f"Notion 페이지 생성 중 오류 발생: {str(e)}")
+                logger.error(f"이메일 발송 중 오류 발생: {str(email_error)}")
 
         logger.info("=== 작업 완료 ===")
 
