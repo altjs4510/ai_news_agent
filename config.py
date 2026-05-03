@@ -24,12 +24,21 @@ YOUTUBE_CHANNELS = {
 }
 
 REDDIT_SUBREDDITS = [
-    "AI_Agents",
+    # 일반 AI 동향
     "artificial",
     "ArtificialInteligence",
     "OpenAI",
     "ClaudeAI",
-    "PromptEngineering"
+    "PromptEngineering",
+    # 에이전트·MCP·로컬 LLM 본진 (DCSAI / Team Agent 키워드 매칭)
+    "AI_Agents",
+    "LocalLLaMA",
+    "mcp",
+    "LangChain",
+    "MachineLearning",
+    # 코딩 에이전트 패턴 비교 (Claude Code plugin/skill/hook 학습용)
+    "cursor",
+    "ChatGPTCoding",
 ]
 
 # Summarization Settings

@@ -547,21 +547,47 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
 {youtube_content[:2000]}
 
 ## 사용자 프로젝트 컨텍스트 (Spotlight 작성 시 활용)
-사용자는 ai_news_agent를 운영합니다:
-- Python 기반 AI 동향 자동 수집·번역·요약·블로그 발행 파이프라인
-- 수집 소스: Reddit (AI 서브레딧), GitHub Trending, Anthropic/OpenAI/Google 공식 블로그
-- LLM: Anthropic Claude (Haiku 4.5 평가/번역, Sonnet 4.6 요약)
-- 출력: Quartz 정적 블로그로 GitHub Pages에 자동 발행
+
+사용자(쿠키, F&F)는 아래 **두 메인 프로젝트**를 동시 진행 중입니다.
+spotlight는 가능하면 이 두 프로젝트 중 하나에 곧장 접목 가능한 항목을 우선 선정하세요.
+ai_news_agent는 보조 후보입니다.
+
+### A. DCSAI (`dcs-ai-project`) — F&F 사내 AI 챗봇 플랫폼 (production)
+- 스택: Next.js 15(Turbopack) 클라이언트 + NestJS 서버 + PostgreSQL(주DB) · Snowflake(분석) · Neo4j(그래프). pnpm 9 + Turborepo
+- 핵심: Anthropic SDK 직통합 — agent loop · HITL(Human-in-the-loop) · HTTP chunked streaming(WebSocket/SSE 아님)
+- MCP host server 자체 구현(OAuth · 세션 · tool 실행), 외부에서도 dcsai KG MCP 사용
+- Frontend는 FSD(Feature-Sliced Design) 엄격 적용. Backend는 NestJS 모듈 패턴
+- 인증: Microsoft SSO(NextAuth) → Azure AD → JWT httpOnly 쿠키
+- 부속군: `dcs-ai-cli`(Rust clap+reqwest+tokio), `dcs-ai-plugin`(Claude Code plugins · commands/agents/skills/hooks · MCP 클라이언트), `ff-claude-manager`(Tauri 2 macOS tray, plugin/MCP 자동 업데이트)
+- 관심 키워드: agent loop, HITL, MCP host·client, HTTP streaming, tool use, Anthropic SDK, Claude Code plugin/skill/hook, RAG·KG, Snowflake, Neo4j, Tauri 2, Microsoft SSO
+
+### B. Team Agent (`gtm-agent-poc`) — F&F Discovery 사업부 GTM AI 에이전트 플랫폼 (쿠키 PM + 아키텍처 1안)
+- 일정: 2026-04-21 ~ 2026-07-31 (5/15 통합 아키텍처, 5/29 Discovery 시범 운영, 7/31 종료)
+- Goal 2축: **Build**(업무·기술 하네스) + **Operate**(사람 전환·가치 회수·성과 측정)
+- 멀티브랜드 중립 — 브랜드별 코드 복제 금지, `brand.yaml` 주입(`discovery.yaml` 1호)
+- 에이전트 계층: `discovery-core-agent`(브랜드 레벨) · `platform-core-agent`(크로스 브랜드)
+- MCP 직연결: dcsai KG MCP를 Anthropic SDK에 직접 등록(별도 adapter 금지 — MCP 자체가 표준 어댑터)
+- 데이터 원천 우선순위: yaml 상수 > Workflow HTML 파싱 > 기존 KG API
+- 피드백루프 4종(L1 상태 · L2 DNA · L3 성숙도 · L4 운영정합) — Build 1차는 L1만 MVP(Activity Log → Observer → UI refresh)
+- Quest 3계층(전체 · 파티=카테고리 · 플레이어), Paperclip 사상 차용(Goal/Project/Issue/Activity Log)
+- 스택: Next.js 15 App Router · FSD · TS 5.7 strict · Tailwind 4 · SWR · `@anthropic-ai/sdk` · `import "server-only"` 강제
+- 관심 키워드: 멀티에이전트 오케스트레이션, MCP server/client, 브랜드별 yaml 주입, Activity Log/Observer, agent autonomy(A0~A4), decision levels(D0~D5), Quest 패턴, FSD, server-only, Workflow 파싱, KG 권한 가드, BrandScopeInterceptor
+
+### C. (보조) ai_news_agent — 본 파이프라인 자체
+- Python AI 동향 수집·번역·요약·발행. Anthropic Haiku 4.5(평가/번역) + Sonnet 4.6(요약). Hugo+Hextra 정적 블로그 자동 발행.
+- 본 파이프라인 자체 개선이 핵심인 항목일 때만 spotlight 후보로 삼으세요.
 
 ## 작성 규칙 (반드시 지키세요)
 
 1. **headline (1줄, 80자 내외)** — 이번 호를 관통하는 핵심 흐름.
 
-2. **spotlight (1개만)** — 자료 중에서 사용자가 직접 PoC하거나 공부하면 가장 도움이 될 항목 1개를 선정하세요. 가능하면 ai_news_agent에 접목 가능성이 높거나 AI 에이전트 운영 학습 가치가 큰 것을 우선합니다.
+2. **spotlight (1개만)** — 자료 중에서 사용자가 직접 PoC/공부하면 가장 도움이 될 항목 1개를 선정하세요.
+   우선순위: **DCSAI 또는 Team Agent에 곧장 접목 가능한 항목 > AI 에이전트/MCP/멀티에이전트 학습 가치가 큰 항목 > ai_news_agent 개선용 항목**.
+   단순 모델 발표/벤치마크 뉴스보다, 코드·아키텍처·도구·오픈소스를 우선 고르세요.
    - title: 항목 이름 (저장소·제품·기능·블로그 글 제목 등)
    - url: 자료에 등장한 URL (절대 임의 생성 금지)
-   - why: 왜 주목할 만한지 1~2문장
-   - application: ai_news_agent의 어떤 부분(수집기, 번역, 요약, 발행, 운영)에 어떻게 접목할지 구체적 제안 1~2문장
+   - why: 왜 주목할 만한지 1~2문장. 위 컨텍스트(agent loop · HITL · MCP host/client · 멀티브랜드 yaml 주입 · Activity Log/Observer · Quest · FSD · server-only · Claude Code plugin 등) 중 어느 결을 건드리는지 한 번은 명시.
+   - application: 접목 대상 프로젝트(DCSAI / Team Agent / ai_news_agent 중 하나)와 구체 모듈·단계를 짚어 1~2문장. 예: "DCSAI agent loop의 HITL 분기에 ~", "Team Agent `discovery-core-agent`의 Workflow HTML 파싱 단계에 ~", "ai_news_agent 요약 프롬프트에 ~".
 
 3. **keywords 5개** — 이번 호 핵심 주제 (각 2~3 단어).
 

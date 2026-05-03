@@ -23,22 +23,53 @@ def _strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
-class AIBlogCollector:
-    """공식 AI 회사 블로그 통합 수집기 (Anthropic / OpenAI / Google AI)."""
+def _local(tag: str) -> str:
+    """ElementTree tag → namespace 제거한 local name."""
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
-    def __init__(self, days: int = 7, per_source_limit: int = 15):
+
+# 에이전트·MCP·코딩 에이전트·멀티에이전트 프레임워크 피드.
+# (사용자 메인 프로젝트 DCSAI / Team Agent 키워드 매칭용)
+DEV_AGENT_FEEDS = [
+    # MCP·agent 본진
+    ("https://simonwillison.net/atom/everything/", "Simon Willison"),
+    ("https://www.latent.space/feed", "Latent Space"),
+    ("https://blog.langchain.com/rss/", "LangChain Blog"),
+    ("https://medium.com/feed/llamaindex-blog", "LlamaIndex Blog"),
+    # 코딩 에이전트 비교 (Claude Code plugin/skill/hook 학습)
+    ("https://github.com/getcursor/cursor/releases.atom", "Cursor Releases"),
+    ("https://github.com/cline/cline/releases.atom", "Cline Releases"),
+    ("https://github.com/Aider-AI/aider/releases.atom", "Aider Releases"),
+    # 멀티에이전트 프레임워크
+    ("https://devblogs.microsoft.com/autogen/feed/", "Microsoft AutoGen"),
+    ("https://github.com/crewAIInc/crewAI/releases.atom", "CrewAI Releases"),
+    ("https://github.com/google/adk-python/releases.atom", "Google ADK Releases"),
+    ("https://github.com/openai/openai-agents-python/releases.atom", "OpenAI Agents SDK Releases"),
+]
+
+
+class AIBlogCollector:
+    """AI 블로그 통합 수집기 — 공식 회사 블로그 + 에이전트/MCP 엔지니어링 블로그."""
+
+    def __init__(self, days: int = 7, per_source_limit: int = 15, per_extra_limit: int = 5):
         self.cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         self.per_source_limit = per_source_limit
+        # 에이전트/엔지니어링 피드는 노이즈가 많아 별도 더 작은 cap 적용
+        self.per_extra_limit = per_extra_limit
 
     async def fetch_posts(self):
         # Meta AI 블로그는 SPA로 server HTML에서 제목 추출이 어려워 임시 보류.
-        results = await asyncio.gather(
+        official_tasks = [
             self._fetch_anthropic(),
             self._fetch_openai(),
             self._fetch_google(),
             self._fetch_deepmind(),
-            return_exceptions=True,
-        )
+        ]
+        extra_tasks = [
+            self._fetch_feed(url, name, limit=self.per_extra_limit)
+            for url, name in DEV_AGENT_FEEDS
+        ]
+        results = await asyncio.gather(*official_tasks, *extra_tasks, return_exceptions=True)
         all_posts = []
         for r in results:
             if isinstance(r, list):
@@ -55,35 +86,69 @@ class AIBlogCollector:
                 return await resp.text()
 
     async def _fetch_rss(self, url: str, source_name: str):
+        # 기존 호출자(공식 RSS)는 self.per_source_limit 사용
+        return await self._fetch_feed(url, source_name, limit=self.per_source_limit)
+
+    async def _fetch_feed(self, url: str, source_name: str, limit: int | None = None):
+        """RSS 2.0과 Atom 1.0 모두 처리하는 범용 피드 파서."""
+        cap = limit if limit is not None else self.per_source_limit
         try:
             text = await self._get(url)
         except Exception as e:
-            logger.error(f"{source_name} RSS 요청 실패: {e}")
+            logger.error(f"{source_name} 피드 요청 실패: {e}")
             return []
 
         try:
             root = ET.fromstring(text)
         except ET.ParseError as e:
-            logger.error(f"{source_name} RSS 파싱 실패: {e}")
+            logger.error(f"{source_name} 피드 파싱 실패: {e}")
             return []
 
         posts = []
-        for item in root.findall(".//item"):
-            title = (item.findtext("title") or "").strip()
-            link = (item.findtext("link") or "").strip()
-            pub_date = item.findtext("pubDate")
-            description = (item.findtext("description") or "").strip()
+        for el in root.iter():
+            if _local(el.tag) not in ("item", "entry"):
+                continue
+
+            title = ""
+            link = ""
+            desc = ""
+            pub_str = ""
+
+            for child in el:
+                ltag = _local(child.tag)
+                if ltag == "title" and not title:
+                    title = (child.text or "").strip()
+                elif ltag == "link":
+                    # Atom: <link href=".."/>; RSS: <link>..</link>
+                    href = child.get("href")
+                    if href and not link:
+                        link = href.strip()
+                    elif (child.text or "").strip() and not link:
+                        link = child.text.strip()
+                elif ltag in ("pubDate", "published", "updated") and not pub_str:
+                    pub_str = (child.text or "").strip()
+                elif ltag in ("description", "summary", "content") and not desc:
+                    desc = (child.text or "").strip()
 
             dt = None
-            if pub_date:
+            if pub_str:
                 try:
-                    dt = parsedate_to_datetime(pub_date)
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
+                    dt = parsedate_to_datetime(pub_str)
                 except (TypeError, ValueError):
                     dt = None
+                if dt is None:
+                    # ISO 8601 (Atom)
+                    try:
+                        s = pub_str.replace("Z", "+00:00")
+                        dt = datetime.fromisoformat(s)
+                    except ValueError:
+                        dt = None
+                if dt and dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
 
             if dt and dt < self.cutoff:
+                continue
+            if not title or not link:
                 continue
 
             posts.append({
@@ -91,9 +156,9 @@ class AIBlogCollector:
                 "title": title,
                 "url": link,
                 "published_at": dt.isoformat() if dt else "",
-                "content": _strip_html(description) or title,
+                "content": _strip_html(desc) or title,
             })
-            if len(posts) >= self.per_source_limit:
+            if len(posts) >= cap:
                 break
 
         logger.info(f"{source_name} 수집 완료: {len(posts)}개")
