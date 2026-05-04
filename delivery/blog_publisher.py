@@ -65,6 +65,7 @@ class BlogPublisher:
         keywords: list[str] | None = None,
         headline: str | None = None,
         spotlight: dict | None = None,
+        additional_picks: list[dict] | None = None,
         has_study: bool = False,
     ) -> str | None:
         if not self.blog_repo.is_dir():
@@ -205,6 +206,7 @@ class BlogPublisher:
         self._update_home(
             date_str, display_date, combined_body, headline, spotlight, clean_tags,
             study_url_path=study_url_path,
+            additional_picks=additional_picks,
         )
 
         if not self._git_commit_and_push(date_str):
@@ -221,6 +223,7 @@ class BlogPublisher:
         spotlight: dict | None = None,
         keywords: list[str] | None = None,
         study_url_path: str | None = None,
+        additional_picks: list[dict] | None = None,
     ) -> None:
         """홈 _index.md 작성. body_text는 combined_insights 본문(요약 callout 중복 회피)."""
         # ─ Hero ────────────────────────────────────────────────────────────
@@ -284,6 +287,40 @@ class BlogPublisher:
                 "</aside>\n\n"
             )
 
+        # ─ Additional picks — "꼭 읽어보세요" 보조 카드 0~2개 ───────────────
+        additional_html = ""
+        if additional_picks:
+            cards = []
+            for pick in additional_picks:
+                p_title = (pick.get("title") or "").strip()
+                p_url = (pick.get("url") or "").strip()
+                p_summary = (pick.get("summary") or "").strip()
+                if not p_title or not p_summary:
+                    continue
+                p_title_e = p_title.replace("&", "&amp;").replace("<", "&lt;")
+                p_sum_e = p_summary.replace("&", "&amp;").replace("<", "&lt;")
+                title_block = (
+                    f'<a class="ai-pick-title" href="{p_url}" target="_blank" rel="noopener">'
+                    f'{p_title_e}<span class="ai-pick-arrow">↗</span></a>'
+                    if p_url
+                    else f'<span class="ai-pick-title">{p_title_e}</span>'
+                )
+                cards.append(
+                    f'<article class="ai-pick">\n'
+                    f'  {title_block}\n'
+                    f'  <p class="ai-pick-summary">{p_sum_e}</p>\n'
+                    f'</article>'
+                )
+            if cards:
+                additional_html = (
+                    '<section class="ai-additional">\n'
+                    '  <p class="ai-eyebrow">ALSO WORTH READING · 꼭 읽어보세요</p>\n'
+                    '  <div class="ai-pick-list">\n  '
+                    + "\n  ".join(cards) + "\n"
+                    "  </div>\n"
+                    "</section>\n\n"
+                )
+
         # ─ Tag chips ──────────────────────────────────────────────────────
         tags_html = ""
         if keywords:
@@ -337,6 +374,7 @@ class BlogPublisher:
             "---\n\n"
             + hero_html
             + spotlight_html
+            + additional_html
             + tags_html
             + body_block
             + footer

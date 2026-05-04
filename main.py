@@ -37,7 +37,7 @@ def _read_or_empty(path: str) -> str:
         return ""
 
 
-def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight, summary, keywords) -> None:
+def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight, summary, keywords, additional_picks=None) -> None:
     display_date = datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
     keywords_line = " · ".join(f"`{k}`" for k in (keywords or []))
     lines = [
@@ -72,6 +72,29 @@ def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight
             "{{< /callout >}}",
             "",
         ]
+
+    # 추가 추천(0~2개) — "꼭 읽어보세요" 톤. spotlight보다 가벼운 카드.
+    if additional_picks:
+        lines += [
+            '{{< callout emoji="📖" >}}',
+            "**꼭 읽어보세요 — 함께 보면 좋은 자료**",
+            "",
+        ]
+        for pick in additional_picks:
+            p_title = (pick.get("title") or "").strip()
+            p_url = (pick.get("url") or "").strip()
+            p_summary = (pick.get("summary") or "").strip()
+            if not p_title:
+                continue
+            link = f"[{p_title}]({p_url})" if p_url else f"**{p_title}**"
+            lines += [
+                f"- **{link}** — {p_summary}",
+            ]
+        lines += [
+            "{{< /callout >}}",
+            "",
+        ]
+
     if keywords_line:
         lines += [
             '{{< callout emoji="🏷" >}}',
@@ -215,14 +238,51 @@ async def main():
         summary, keywords = None, None
         headline = ""
         spotlight = None
+        additional_picks: list[dict] = []
         if ENABLE_BLOG or ENABLE_NOTION:
+            # ── 캐시 우선 — 같은 date_str 재실행 시 LLM 재호출 회피 ──
+            cached_meta_path = f"{report_path}/meta.json"
+            cached = None
+            if os.path.exists(cached_meta_path):
+                try:
+                    with open(cached_meta_path, "r", encoding="utf-8") as cf:
+                        cached = json.load(cf)
+                    if (
+                        cached.get("headline")
+                        and cached.get("spotlight")
+                        and cached.get("keywords")
+                    ):
+                        headline = cached.get("headline", "")
+                        spotlight = cached.get("spotlight") or None
+                        keywords = cached.get("keywords") or []
+                        additional_picks = cached.get("additional_picks") or []
+                        summary = []  # legacy
+                        logger.info(
+                            "meta.json 캐시 hit — LLM 재호출 스킵 "
+                            f"(picks: 1 + {len(additional_picks)})"
+                        )
+                    else:
+                        cached = None
+                except Exception as e:
+                    logger.warning(f"meta.json 캐시 읽기 실패, 재생성: {e}")
+                    cached = None
+
+            if cached is None:
+                try:
+                    headline, spotlight, additional_picks, summary, keywords = await generate_summary_and_keywords(
+                        aitimes_content, youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content
+                    )
+                except Exception as e:
+                    logger.error(f"요약/키워드 생성 실패: {e}")
+                    additional_picks = []
+
             try:
-                headline, spotlight, summary, keywords = await generate_summary_and_keywords(
-                    aitimes_content, youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content
+                _write_summary_markdown(
+                    report_path, date_str, headline, spotlight, summary, keywords,
+                    additional_picks=additional_picks,
                 )
-                _write_summary_markdown(report_path, date_str, headline, spotlight, summary, keywords)
             except Exception as e:
-                logger.error(f"요약/키워드 생성 실패: {e}")
+                logger.error(f"summary.md 작성 실패: {e}")
 
         # Spotlight가 정해지면 그 자료 한 건을 깊이 공부할 수 있도록 학습 브리프 생성.
         # 실패해도 publish 자체는 진행.
@@ -240,18 +300,19 @@ async def main():
             except Exception as e:
                 logger.error(f"학습 브리프 생성 실패: {e}")
 
-        # publish 직전, republish 워크플로가 동일 데이터로 재실행할 수 있도록 메타 저장.
+        # publish 직전, republish 워크플로 + 같은 date_str 재실행 캐시용 메타 저장.
         try:
             meta = {
                 "date_str": date_str,
                 "headline": headline or "",
                 "spotlight": spotlight or {},
+                "additional_picks": additional_picks or [],
                 "keywords": list(keywords or []),
                 "has_study": bool(study_md_written),
             }
             with open(f"{report_path}/meta.json", "w", encoding="utf-8") as mf:
                 json.dump(meta, mf, ensure_ascii=False, indent=2)
-            logger.info("meta.json 저장 완료 (republish 호환)")
+            logger.info("meta.json 저장 완료 (republish + spotlight 캐시 호환)")
         except Exception as e:
             logger.error(f"meta.json 저장 실패: {e}")
 
@@ -266,6 +327,7 @@ async def main():
                     keywords=keywords,
                     headline=headline,
                     spotlight=spotlight,
+                    additional_picks=additional_picks,
                     has_study=study_md_written,
                 )
                 if blog_url:
@@ -658,9 +720,18 @@ ai_news_agent는 보조 후보입니다.
    - why: 왜 주목할 만한지 1~2문장. 위 컨텍스트(agent loop · HITL · MCP host/client · 멀티브랜드 yaml 주입 · Activity Log/Observer · Quest · FSD · server-only · Claude Code plugin 등) 중 어느 결을 건드리는지 한 번은 명시.
    - application: 접목 대상 프로젝트(DCSAI / Team Agent / ai_news_agent 중 하나)와 구체 모듈·단계를 짚어 1~2문장. 예: "DCSAI agent loop의 HITL 분기에 ~", "Team Agent `discovery-core-agent`의 Workflow HTML 파싱 단계에 ~", "ai_news_agent 요약 프롬프트에 ~".
 
-3. **keywords 5개** — 이번 호 핵심 주제 (각 2~3 단어).
+3. **additional_picks (0~2개)** — spotlight 다음으로 의미 있는 자료 0~2개. "꼭 읽어보세요" 톤으로 가볍게.
+   - spotlight와 **중복 금지**(같은 URL/같은 저장소/같은 글 X).
+   - 각 항목은 spotlight와 같은 결(에이전트·MCP·코딩 에이전트·멀티에이전트·HITL 등)이지만 보조 후보.
+   - 후보가 약하면 1개만 또는 빈 배열로.
+   - 항목 구조:
+     - title: 항목 이름
+     - url: 자료에 등장한 URL (절대 임의 생성 금지)
+     - summary: 무엇을 다루는지 + 왜 함께 읽을만한지 1~2문장(한국어). spotlight의 why/application 형식과 달리 한 문단으로 통합.
 
-4. 인사말·결론 멘트 금지.
+4. **keywords 5개** — 이번 호 핵심 주제 (각 2~3 단어).
+
+5. 인사말·결론 멘트 금지.
 
 ## 응답 형식 (JSON, 다른 텍스트 금지)
 {{
@@ -671,6 +742,9 @@ ai_news_agent는 보조 후보입니다.
     "why": "...",
     "application": "..."
   }},
+  "additional_picks": [
+    {{ "title": "...", "url": "https://...", "summary": "..." }}
+  ],
   "keywords": ["...", "...", "...", "...", "..."]
 }}"""
 
@@ -698,6 +772,26 @@ ai_news_agent는 보조 후보입니다.
             spotlight = result_json.get('spotlight') or None
             summary = result_json.get('summary', [])  # legacy, 더 이상 사용 안 함
             keywords = result_json.get('keywords', [])
+            additional_picks_raw = result_json.get('additional_picks') or []
+
+            # additional_picks 정제 — spotlight와 URL 중복 제거, 최대 2개로 cap
+            additional_picks: list[dict] = []
+            spot_url = (spotlight or {}).get('url', '') if isinstance(spotlight, dict) else ''
+            for item in additional_picks_raw:
+                if not isinstance(item, dict):
+                    continue
+                title = (item.get('title') or '').strip()
+                url = (item.get('url') or '').strip()
+                summary_txt = (item.get('summary') or '').strip()
+                if not title or not url or not summary_txt:
+                    continue
+                if url == spot_url:
+                    continue
+                if any(p['url'] == url for p in additional_picks):
+                    continue
+                additional_picks.append({"title": title, "url": url, "summary": summary_txt})
+                if len(additional_picks) >= 2:
+                    break
 
             if not headline and not spotlight:
                 raise ValueError("헤드라인/스포트라이트가 생성되지 않았습니다.")
@@ -707,9 +801,11 @@ ai_news_agent는 보조 후보입니다.
             logger.info(f"헤드라인: {headline}")
             if spotlight:
                 logger.info(f"Spotlight: {spotlight.get('title')}")
+            if additional_picks:
+                logger.info(f"Additional picks ({len(additional_picks)}): {[p['title'] for p in additional_picks]}")
             logger.info(f"요약 생성 완료: {len(summary)}개 카테고리")
             logger.info(f"키워드 생성 완료: {keywords}")
-            return headline, spotlight, summary, keywords
+            return headline, spotlight, additional_picks, summary, keywords
         raise ValueError("JSON 형식으로 응답이 오지 않았습니다.")
     
     except Exception as e:
