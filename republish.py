@@ -52,6 +52,7 @@ async def main() -> int:
     spotlight = meta.get("spotlight") or None
     keywords = meta.get("keywords") or []
     additional_picks = meta.get("additional_picks") or []
+    categories = meta.get("categories") or []
     try:
         _write_summary_markdown(
             str(latest), date_str, headline, spotlight, [], keywords,
@@ -69,6 +70,7 @@ async def main() -> int:
         headline=headline,
         spotlight=spotlight,
         additional_picks=additional_picks,
+        categories=categories,
         has_study=meta.get("has_study", (latest / "study.md").exists()),
     )
     if blog_url:

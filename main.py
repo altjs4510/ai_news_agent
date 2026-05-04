@@ -233,6 +233,7 @@ async def main():
         headline = ""
         spotlight = None
         additional_picks: list[dict] = []
+        categories: list[str] = []
         if ENABLE_BLOG or ENABLE_NOTION:
             # ── 캐시 우선 — 같은 date_str 재실행 시 LLM 재호출 회피 ──
             cached_meta_path = f"{report_path}/meta.json"
@@ -241,21 +242,23 @@ async def main():
                 try:
                     with open(cached_meta_path, "r", encoding="utf-8") as cf:
                         cached = json.load(cf)
-                    # 캐시 schema 검증 — additional_picks 키가 누락된 구버전이면 재생성
+                    # 캐시 schema 검증 — categories 키 추가됨. 둘 다 있어야 캐시 유효.
                     if (
                         cached.get("headline")
                         and cached.get("spotlight")
                         and cached.get("keywords")
                         and "additional_picks" in cached
+                        and "categories" in cached
                     ):
                         headline = cached.get("headline", "")
                         spotlight = cached.get("spotlight") or None
                         keywords = cached.get("keywords") or []
                         additional_picks = cached.get("additional_picks") or []
+                        categories = cached.get("categories") or []
                         summary = []  # legacy
                         logger.info(
                             "meta.json 캐시 hit — LLM 재호출 스킵 "
-                            f"(picks: 1 + {len(additional_picks)})"
+                            f"(picks: 1 + {len(additional_picks)}, cats: {categories})"
                         )
                     else:
                         cached = None
@@ -265,12 +268,13 @@ async def main():
 
             if cached is None:
                 try:
-                    headline, spotlight, additional_picks, summary, keywords = await generate_summary_and_keywords(
+                    headline, spotlight, additional_picks, summary, keywords, categories = await generate_summary_and_keywords(
                         aitimes_content, youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content
                     )
                 except Exception as e:
                     logger.error(f"요약/키워드 생성 실패: {e}")
                     additional_picks = []
+                    categories = []
 
             try:
                 _write_summary_markdown(
@@ -303,6 +307,7 @@ async def main():
                 "headline": headline or "",
                 "spotlight": spotlight or {},
                 "additional_picks": additional_picks or [],
+                "categories": list(categories or []),
                 "keywords": list(keywords or []),
                 "has_study": bool(study_md_written),
             }
@@ -324,6 +329,7 @@ async def main():
                     headline=headline,
                     spotlight=spotlight,
                     additional_picks=additional_picks,
+                    categories=categories,
                     has_study=study_md_written,
                 )
                 if blog_url:
@@ -646,9 +652,27 @@ async def summarize_combined_insights(
         logger.error(f"통합 인사이트 추출 실패: {str(e)}", exc_info=True)
         return None
 
+# Knowledge 사이드바의 고정 카테고리 vocabulary.
+# LLM은 이 8개 중 1~2개를 골라 categories 필드에 채운다(자유 생성 금지).
+# 자유 키워드는 keywords 필드에 별도로 그대로 5개 생성됨.
+CATEGORY_VOCABULARY = [
+    "에이전트 오케스트레이션",   # agent loop, multi-agent, orchestration
+    "MCP & 도구 통합",          # connector, host/client, tool use, skills
+    "코딩 에이전트",            # Cursor, Cline, Aider, Claude Code
+    "모델 & 연구",              # Claude/GPT/Gemini 발표, arxiv, paper
+    "인프라 & 컴퓨트",          # cloud, GPU, scaling, FedRAMP
+    "보안 & 거버넌스",          # supply chain, agent risk, compliance
+    "응용 사례",                # vertical/enterprise/SaaS use case
+    "산업 동향",                # pricing, M&A, market shift
+]
+
+
 async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit_insights, github_content="", ai_blogs_content="", bluesky_content=""):
     """수집된 콘텐츠를 기반으로 전체 요약과 키워드를 생성합니다."""
     logger.info("요약 및 키워드 생성 시작")
+
+    # 카테고리 vocabulary block — LLM이 정확히 옮길 수 있도록 명시.
+    category_vocab_block = "\n".join(f"   - {c}" for c in CATEGORY_VOCABULARY)
 
     # 요약을 위한 프롬프트 생성
     prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, AI Times, YouTube 영상, Bluesky 버즈 자료입니다. 이를 바탕으로 아래 기준에 따라 정리해주세요.
@@ -725,9 +749,13 @@ ai_news_agent는 보조 후보입니다.
      - url: 자료에 등장한 URL (절대 임의 생성 금지)
      - summary: 무엇을 다루는지 + 왜 함께 읽을만한지 1~2문장(한국어). spotlight의 why/application 형식과 달리 한 문단으로 통합.
 
-4. **keywords 5개** — 이번 호 핵심 주제 (각 2~3 단어).
+4. **categories (1~2개)** — 아래 **고정 vocabulary**에서만 선택. **새 단어 만들면 안 됩니다.**
+   spotlight + 이번 호 흐름이 가장 많이 걸치는 카테고리 1~2개를 정확히 그대로 옮겨 적으세요.
+   {category_vocab_block}
 
-5. 인사말·결론 멘트 금지.
+5. **keywords 5개** — 이번 호 핵심 주제 (각 2~3 단어). 자유 생성. categories와 별도.
+
+6. 인사말·결론 멘트 금지.
 
 ## 응답 형식 (JSON, 다른 텍스트 금지)
 {{
@@ -741,6 +769,7 @@ ai_news_agent는 보조 후보입니다.
   "additional_picks": [
     {{ "title": "...", "url": "https://...", "summary": "..." }}
   ],
+  "categories": ["..."],
   "keywords": ["...", "...", "...", "...", "..."]
 }}"""
 
@@ -769,6 +798,26 @@ ai_news_agent는 보조 후보입니다.
             summary = result_json.get('summary', [])  # legacy, 더 이상 사용 안 함
             keywords = result_json.get('keywords', [])
             additional_picks_raw = result_json.get('additional_picks') or []
+
+            # categories 정제 — vocabulary 안에 있는 것만 통과, 최대 2개로 cap.
+            # LLM이 vocabulary 밖 단어를 만들면 (그래선 안 되지만) 그건 keywords로 흘려보냄.
+            raw_categories = result_json.get('categories') or []
+            categories: list[str] = []
+            for c in raw_categories:
+                if not isinstance(c, str):
+                    continue
+                c = c.strip().strip('"').strip("'").strip()
+                if c in CATEGORY_VOCABULARY and c not in categories:
+                    categories.append(c)
+                if len(categories) >= 2:
+                    break
+            if not categories:
+                # fallback — vocabulary 매칭 실패 시 첫 항목 부여(빈 사이드바 방지)
+                logger.warning(
+                    f"LLM categories({raw_categories})가 vocabulary 매칭 실패, "
+                    f"fallback='{CATEGORY_VOCABULARY[0]}'"
+                )
+                categories = [CATEGORY_VOCABULARY[0]]
 
             # additional_picks 정제 — spotlight와 URL 중복 제거, 최대 2개로 cap
             additional_picks: list[dict] = []
@@ -799,9 +848,9 @@ ai_news_agent는 보조 후보입니다.
                 logger.info(f"Spotlight: {spotlight.get('title')}")
             if additional_picks:
                 logger.info(f"Additional picks ({len(additional_picks)}): {[p['title'] for p in additional_picks]}")
-            logger.info(f"요약 생성 완료: {len(summary)}개 카테고리")
+            logger.info(f"카테고리: {categories}")
             logger.info(f"키워드 생성 완료: {keywords}")
-            return headline, spotlight, additional_picks, summary, keywords
+            return headline, spotlight, additional_picks, summary, keywords, categories
         raise ValueError("JSON 형식으로 응답이 오지 않았습니다.")
     
     except Exception as e:

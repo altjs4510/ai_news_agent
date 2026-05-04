@@ -93,7 +93,7 @@ class BlogPublisher:
             idx.write_text(desired, encoding="utf-8")
 
     def _scan_knowledge_entries(self) -> dict[str, dict]:
-        """모든 content/knowledge/<date>.md를 스캔해 {date_str: {title, tags}} 반환."""
+        """모든 content/knowledge/<date>.md를 스캔해 {date_str: {title, tags, categories}} 반환."""
         knowledge_dir = self.blog_repo / "content" / "knowledge"
         entries: dict[str, dict] = {}
         if not knowledge_dir.is_dir():
@@ -108,6 +108,7 @@ class BlogPublisher:
                 continue
             title_m = re.search(r'^title:\s*"(.+?)"', text, re.M)
             tags_m = re.search(r'^tags:\s*\[(.+?)\]', text, re.M)
+            cats_m = re.search(r'^categories:\s*\[(.+?)\]', text, re.M)
             title = title_m.group(1) if title_m else date
             tags = []
             if tags_m:
@@ -115,29 +116,53 @@ class BlogPublisher:
                     t = raw.strip().strip('"').strip("'").strip()
                     if t:
                         tags.append(t)
-            entries[date] = {"title": title, "tags": tags}
+            cats = []
+            if cats_m:
+                for raw in cats_m.group(1).split(","):
+                    c = raw.strip().strip('"').strip("'").strip()
+                    if c:
+                        cats.append(c)
+            entries[date] = {"title": title, "tags": tags, "categories": cats}
         return entries
 
     def _build_knowledge_sidebar_html(self, current_date_str: str | None = None) -> str:
-        """카테고리(태그) 트리 사이드바. 각 노드는 <details>/<summary>로 펼침."""
+        """카테고리 트리 사이드바. categories(고정 vocabulary) 기준 그룹핑.
+        categories가 비어 있는 구버전 엔트리는 그 엔트리의 첫 tag로 fallback.
+        """
         entries = self._scan_knowledge_entries()
         if not entries:
             return ""
 
-        # 태그 → 엔트리 그룹핑 (날짜 desc)
-        by_tag: dict[str, list[tuple[str, str]]] = {}
+        # 카테고리 → 엔트리 그룹핑 (날짜 desc)
+        by_cat: dict[str, list[tuple[str, str]]] = {}
         for date, info in entries.items():
-            for tag in info["tags"]:
-                by_tag.setdefault(tag, []).append((date, info["title"]))
-        for tag in by_tag:
-            by_tag[tag].sort(key=lambda x: x[0], reverse=True)
-        sorted_tags = sorted(by_tag.items(), key=lambda x: (-len(x[1]), x[0]))
+            cats = info.get("categories") or []
+            if not cats:
+                # categories 누락된 구버전 엔트리는 첫 tag로 (있으면) 또는 "기타"로
+                cats = [info["tags"][0]] if info.get("tags") else ["기타"]
+            for cat in cats:
+                by_cat.setdefault(cat, []).append((date, info["title"]))
+        for cat in by_cat:
+            by_cat[cat].sort(key=lambda x: x[0], reverse=True)
+
+        # vocabulary 순서 우선 + 그 외(레거시)는 카운트 desc로 뒤에
+        sorted_cats = []
+        seen = set()
+        # vocabulary 정의 순서대로 먼저
+        from main import CATEGORY_VOCABULARY  # 지연 import: vocabulary는 main.py 단일 출처
+        for v in CATEGORY_VOCABULARY:
+            if v in by_cat:
+                sorted_cats.append((v, by_cat[v]))
+                seen.add(v)
+        # vocabulary 밖 (레거시 fallback) 카테고리는 뒤에 카운트 desc
+        leftovers = [(c, items) for c, items in by_cat.items() if c not in seen]
+        leftovers.sort(key=lambda x: (-len(x[1]), x[0]))
+        sorted_cats.extend(leftovers)
 
         blocks = []
-        for tag, items in sorted_tags:
-            tag_e = tag.replace("&", "&amp;").replace("<", "&lt;")
-            # 현재 페이지가 이 카테고리에 속하면 펼친 상태로 시작
-            is_open = any(d == current_date_str for d, _ in items) or len(by_tag) <= 5
+        for cat, items in sorted_cats:
+            cat_e = cat.replace("&", "&amp;").replace("<", "&lt;")
+            is_open = any(d == current_date_str for d, _ in items) or len(by_cat) <= 8
             open_attr = " open" if is_open else ""
             li_html = []
             for date, title in items:
@@ -153,7 +178,7 @@ class BlogPublisher:
                 )
             blocks.append(
                 f'<details class="ai-cat"{open_attr}>'
-                f'<summary><span class="catname">#{tag_e}</span>'
+                f'<summary><span class="catname">{cat_e}</span>'
                 f'<span class="catcount">{len(items)}</span></summary>'
                 f'<ul>{"".join(li_html)}</ul>'
                 f"</details>"
@@ -194,6 +219,7 @@ class BlogPublisher:
         headline: str | None = None,
         spotlight: dict | None = None,
         additional_picks: list[dict] | None = None,
+        categories: list[str] | None = None,
         has_study: bool = False,
     ) -> str | None:
         if not self.blog_repo.is_dir():
@@ -267,6 +293,11 @@ class BlogPublisher:
             quoted = ", ".join(f'"{t}"' for t in clean_tags)
             tags_yaml = f"tags: [{quoted}]\n"
 
+        cats_yaml = ""
+        if categories:
+            quoted = ", ".join(f'"{c}"' for c in categories)
+            cats_yaml = f"categories: [{quoted}]\n"
+
         # 상세 페이지 hero — 홈 hero와 같은 톤. headline이 비어 있으면 일자 fallback.
         post_h1 = (headline or f"{display_date} AI 동향").strip()
         post_hero = self._detail_hero_html("POSTS", display_date, "주간 요약", post_h1)
@@ -277,6 +308,7 @@ class BlogPublisher:
                 f'title: "{post_h1}"\n'   # frontmatter title = headline (브라우저 탭 + 카드)
                 f"date: {display_date}\n"
                 + tags_yaml
+                + cats_yaml
                 + "---\n\n"
                 + post_hero
                 + "\n\n---\n\n".join(sections)
@@ -288,6 +320,7 @@ class BlogPublisher:
                 f'title: "{post_h1}"\n'
                 f"date: {display_date}\n"
                 + tags_yaml
+                + cats_yaml
                 + "---\n\n"
                 + post_hero
                 + "이번 호는 요약 생성에 실패했습니다. 원본 수집 데이터는 [raw](raw) 페이지에서 확인할 수 있습니다.\n"
@@ -344,6 +377,11 @@ class BlogPublisher:
                 quoted = ", ".join(f'"{t}"' for t in clean_tags)
                 tags_yaml_k = f"tags: [{quoted}]\n"
 
+            cats_yaml_k = ""
+            if categories:
+                quoted = ", ".join(f'"{c}"' for c in categories)
+                cats_yaml_k = f"categories: [{quoted}]\n"
+
             # 상세 페이지 hero — 홈/포스트와 같은 결.
             knowledge_h1 = sp_title or display_date
             knowledge_hero = self._detail_hero_html(
@@ -351,12 +389,12 @@ class BlogPublisher:
             )
 
             # ▶ 새 entry를 디렉토리에 먼저 (빈 placeholder로) 두면 스캔 시 자기 자신도 포함.
-            #   placeholder는 frontmatter만 — 사이드바 빌드용.
             placeholder = (
                 "---\n"
                 f'title: "{sp_title_yaml or display_date}"\n'
                 f"date: {display_date}\n"
                 + tags_yaml_k
+                + cats_yaml_k
                 + "---\n"
             )
             (knowledge_dir / f"{date_str}.md").write_text(placeholder, encoding="utf-8")
@@ -372,6 +410,7 @@ class BlogPublisher:
                 f"date: {display_date}\n"
                 + (f'source_url: "{sp_url}"\n' if sp_url else "")
                 + tags_yaml_k
+                + cats_yaml_k
                 + "---\n\n"
                 '<div class="ai-knowledge-shell">\n\n'
                 + sidebar_html
