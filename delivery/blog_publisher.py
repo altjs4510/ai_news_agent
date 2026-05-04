@@ -92,6 +92,59 @@ class BlogPublisher:
         if not idx.exists() or idx.read_text(encoding="utf-8") != desired:
             idx.write_text(desired, encoding="utf-8")
 
+    def _refresh_knowledge_index(self) -> None:
+        """/knowledge/ 인덱스 페이지 상단에 태그 칩 스트립을 누적 emit.
+
+        모든 content/knowledge/<date>.md 파일의 frontmatter tags를 집계해
+        빈도순으로 카테고리 칩을 만든다. 각 칩은 /tags/<태그>/ 로 라우트되어
+        태그별 학습 노트 + 주간 요약 모두 묶어서 보여준다.
+        """
+        knowledge_dir = self.blog_repo / "content" / "knowledge"
+        if not knowledge_dir.is_dir():
+            return
+
+        tag_counts: dict[str, int] = {}
+        for md in knowledge_dir.glob("*.md"):
+            if md.name == "_index.md":
+                continue
+            try:
+                text = md.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            m = re.search(r"^tags:\s*\[(.+?)\]", text, re.M)
+            if not m:
+                continue
+            for raw in m.group(1).split(","):
+                t = raw.strip().strip('"').strip("'").strip()
+                if t:
+                    tag_counts[t] = tag_counts.get(t, 0) + 1
+
+        base = self._section_index_text("Knowledge")
+        if not tag_counts:
+            (knowledge_dir / "_index.md").write_text(base, encoding="utf-8")
+            return
+
+        # 빈도순 정렬, 상위 30개 cap
+        sorted_tags = sorted(tag_counts.items(), key=lambda x: (-x[1], x[0]))[:30]
+        chip_html = []
+        for tag, cnt in sorted_tags:
+            tag_e = tag.replace("&", "&amp;").replace("<", "&lt;")
+            chip_html.append(
+                f'<a class="ai-chip" href="../tags/{tag}/">'
+                f'#{tag_e}<span class="ai-chip-count">{cnt}</span>'
+                f"</a>"
+            )
+
+        intro = (
+            '\n<section class="ai-knowledge-intro">\n'
+            '  <p class="ai-eyebrow">CATEGORIES · 카테고리</p>\n'
+            '  <nav class="ai-chips ai-knowledge-chips">\n    '
+            + "".join(chip_html)
+            + "\n  </nav>\n"
+            "</section>\n"
+        )
+        (knowledge_dir / "_index.md").write_text(base + intro, encoding="utf-8")
+
     def publish(
         self,
         report_dir: str,
@@ -270,6 +323,9 @@ class BlogPublisher:
             )
             (knowledge_dir / f"{date_str}.md").write_text(knowledge_md, encoding="utf-8")
             study_url_path = f"knowledge/{date_str}/"
+
+            # /knowledge/ 인덱스 상단 카테고리 칩 strip 갱신 (누적 태그 집계)
+            self._refresh_knowledge_index()
 
         # 3) 홈 (content/_index.md) = 최신 summary + 아카이브 안내
         self._update_home(
