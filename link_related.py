@@ -123,7 +123,7 @@ def _build_related_block(related: list[dict]) -> str:
         display = f"{d[:4]}-{d[4:6]}-{d[6:]}"
         short = title[:48] + ("…" if len(title) > 48 else "")
         items.append(
-            f'<li><a href="../{d}/">'
+            f'<li><a href="/knowledge/{d}/">'
             f'<span class="kdate">{display}</span>'
             f'<span class="ktitle">{short}</span>'
             f"</a></li>"
