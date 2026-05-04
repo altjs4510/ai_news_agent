@@ -227,7 +227,7 @@ async def main():
         if ENABLE_BLOG:
             try:
                 publisher = BlogPublisher()
-                blog_url = publisher.publish(report_path, date_str)
+                blog_url = publisher.publish(report_path, date_str, keywords=keywords)
                 if blog_url:
                     logger.info(f"블로그 publish 완료: {blog_url}")
             except Exception as e:

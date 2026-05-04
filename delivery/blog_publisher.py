@@ -58,7 +58,7 @@ class BlogPublisher:
             "BLOG_SITE_URL", "https://altjs4510.github.io/ai_news_blog"
         ).rstrip("/")
 
-    def publish(self, report_dir: str, date_str: str) -> str | None:
+    def publish(self, report_dir: str, date_str: str, keywords: list[str] | None = None) -> str | None:
         if not self.blog_repo.is_dir():
             logger.error(f"블로그 레포를 찾을 수 없습니다: {self.blog_repo}")
             return None
@@ -97,12 +97,27 @@ class BlogPublisher:
             sections.append(combined_body)
         sections.append("---\n\n📂 [원본 수집 데이터 펼쳐보기](raw)")
 
+        # 키워드를 Hugo taxonomy(tags)에 노출 → /tags/<keyword>/ 자동 생성
+        # 백틱(`...`)이 붙은 키워드는 벗기고, 양옆 공백 정리
+        clean_tags = []
+        for k in (keywords or []):
+            if not k:
+                continue
+            t = str(k).strip().strip("`").strip()
+            if t and t not in clean_tags:
+                clean_tags.append(t)
+        tags_yaml = ""
+        if clean_tags:
+            quoted = ", ".join(f'"{t}"' for t in clean_tags)
+            tags_yaml = f"tags: [{quoted}]\n"
+
         if sections:
             index_md = (
                 "---\n"
                 f'title: "{display_date} AI 동향 요약"\n'
                 f"date: {display_date}\n"
-                "---\n\n"
+                + tags_yaml
+                + "---\n\n"
                 + "\n\n---\n\n".join(sections)
                 + "\n"
             )
@@ -111,7 +126,8 @@ class BlogPublisher:
                 "---\n"
                 f'title: "{display_date} AI 동향"\n'
                 f"date: {display_date}\n"
-                "---\n\n"
+                + tags_yaml
+                + "---\n\n"
                 "이번 호는 요약 생성에 실패했습니다. 원본 수집 데이터는 [raw](raw) 페이지에서 확인할 수 있습니다.\n"
             )
         (target / "_index.md").write_text(index_md, encoding="utf-8")
@@ -149,6 +165,15 @@ class BlogPublisher:
         return f"{self.site_url}/posts/{date_str}/"
 
     def _update_home(self, date_str: str, display_date: str, summary_body: str) -> None:
+        # 최신 호 카드 — 줄 전체가 클릭 가능. Hextra cards 쇼트코드 사용.
+        latest_card = (
+            "{{< cards >}}\n"
+            f'  {{{{< card link="posts/{date_str}/" '
+            f'title="📰 {display_date} — 최신 호 보기" '
+            f'subtitle="이번 주 AI 동향 요약 + 통합 인사이트 + 원본 수집 데이터" >}}}}\n'
+            "{{< /cards >}}\n\n"
+        )
+
         intro = (
             "---\n"
             'title: "AI News Digest"\n'
@@ -160,9 +185,9 @@ class BlogPublisher:
             "{{< /callout >}}\n\n"
             "**수집 소스** — Anthropic·OpenAI·Google·DeepMind 공식 블로그, "
             "Reddit (AI 서브레딧), Hacker News, Product Hunt, TechCrunch AI, "
-            "arxiv (cs.AI/cs.CL), HuggingFace Papers, GitHub Trending. "
+            "arxiv (cs.AI/cs.CL), HuggingFace Papers, GitHub Trending, Bluesky. "
             "([자세히](about/))\n\n"
-            f"## 📰 가장 최근: [{display_date}]({{{{< relref \"posts/{date_str}\" >}}}})\n\n"
+            + latest_card
         )
         body = summary_body.strip() if summary_body else "_(이번 호는 요약 생성에 실패했습니다.)_"
         archive = (
