@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from delivery.blog_publisher import BlogPublisher
+from main import _write_summary_markdown
 from utils.logger import setup_logger
 
 logger = setup_logger("republish")
@@ -45,13 +46,29 @@ async def main() -> int:
     else:
         logger.warning(f"{meta_path} 없음 — headline/spotlight 메타 없이 진행")
 
+    # publisher 템플릿이 바뀌면 summary.md도 같이 재생성해야 변경이 반영됨.
+    # (publisher는 summary.md를 그대로 읽어서 post에 끼워 넣기 때문)
+    headline = meta.get("headline") or ""
+    spotlight = meta.get("spotlight") or None
+    keywords = meta.get("keywords") or []
+    additional_picks = meta.get("additional_picks") or []
+    try:
+        _write_summary_markdown(
+            str(latest), date_str, headline, spotlight, [], keywords,
+            additional_picks=additional_picks,
+        )
+        logger.info("summary.md 재생성 완료 (현재 publisher 템플릿 기준)")
+    except Exception as e:
+        logger.warning(f"summary.md 재생성 실패, 기존 파일 그대로 사용: {e}")
+
     publisher = BlogPublisher()
     blog_url = publisher.publish(
         report_dir=str(latest),
         date_str=date_str,
-        keywords=meta.get("keywords"),
-        headline=meta.get("headline"),
-        spotlight=meta.get("spotlight"),
+        keywords=keywords,
+        headline=headline,
+        spotlight=spotlight,
+        additional_picks=additional_picks,
         has_study=meta.get("has_study", (latest / "study.md").exists()),
     )
     if blog_url:
