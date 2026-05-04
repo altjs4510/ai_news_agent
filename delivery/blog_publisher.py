@@ -108,12 +108,12 @@ class BlogPublisher:
         sections = []
         if summary_body:
             sections.append(summary_body)
-        # 포스트 상단에 학습 브리프 진입 배너
+        # 포스트 상단에 학습 브리프 진입 배너 (별도 knowledge 섹션의 자식 글로 링크)
         if study_body:
             sections.append(
                 "{{< callout emoji=\"📚\" >}}\n"
-                "**오늘의 학습 — Spotlight 자료 한 건을 한국어로 정리** "
-                "→ [학습 브리프 열기](study)\n"
+                "**오늘의 학습 — Spotlight 자료를 한국어로 정리한 학습 노트** "
+                f"→ [지식 섹션에서 열기]({{{{< relref \"knowledge/{date_str}\" >}}}})\n"
                 "{{< /callout >}}"
             )
         if combined_body:
@@ -179,28 +179,56 @@ class BlogPublisher:
             )
             (target / "raw.md").write_text(raw_md, encoding="utf-8")
 
-        # 2.5) 학습 브리프 — Spotlight 자료 1건 한국어 정리
+        # 2.5) 학습 브리프 — 별도 'knowledge' 섹션에 누적 (블로그형 아카이브).
+        # posts/<date>/study/ 자식 페이지가 아니라 /knowledge/<date>/ 독립 글로 발행.
         study_url_path: str | None = None
         if study_body:
             sp_title = (spotlight or {}).get("title", "").strip() if isinstance(spotlight, dict) else ""
             sp_url = (spotlight or {}).get("url", "").strip() if isinstance(spotlight, dict) else ""
             sp_title_yaml = sp_title.replace('"', "'")
-            origin_block = (
-                f"> 원문: [{sp_title or sp_url}]({sp_url})\n\n"
-                if sp_url
-                else ""
+
+            # knowledge 섹션 디렉토리 + 최초 1회 _index.md 생성
+            knowledge_dir = self.blog_repo / "content" / "knowledge"
+            knowledge_dir.mkdir(parents=True, exist_ok=True)
+            section_index = knowledge_dir / "_index.md"
+            if not section_index.exists():
+                section_index.write_text(
+                    "---\n"
+                    'title: "Knowledge"\n'
+                    "---\n\n"
+                    "매주 spotlight로 뽑힌 자료를 깊이 정리한 학습 브리프 모음.\n"
+                    "발행 아카이브와 별도로, 주제별로 누적되는 지식 섹션입니다.\n",
+                    encoding="utf-8",
+                )
+
+            # 본문 상단 — 원문 + 출처 호 백링크
+            origin_block_parts = []
+            if sp_url:
+                origin_block_parts.append(f"> 원문: [{sp_title or sp_url}]({sp_url})")
+            origin_block_parts.append(
+                f"> ↩ 출처 호: [{display_date} AI 동향 요약]"
+                f"({{{{< relref \"posts/{date_str}\" >}}}})"
             )
-            study_md = (
+            origin_block = "\n".join(origin_block_parts) + "\n\n"
+
+            tags_yaml_k = ""
+            if clean_tags:
+                quoted = ", ".join(f'"{t}"' for t in clean_tags)
+                tags_yaml_k = f"tags: [{quoted}]\n"
+
+            knowledge_md = (
                 "---\n"
-                f'title: "📚 오늘의 학습 — {sp_title_yaml or display_date}"\n'
+                f'title: "{sp_title_yaml or display_date}"\n'
                 f"date: {display_date}\n"
-                "---\n\n"
+                + (f'source_url: "{sp_url}"\n' if sp_url else "")
+                + tags_yaml_k
+                + "---\n\n"
                 + origin_block
                 + study_body
                 + "\n"
             )
-            (target / "study.md").write_text(study_md, encoding="utf-8")
-            study_url_path = f"posts/{date_str}/study/"
+            (knowledge_dir / f"{date_str}.md").write_text(knowledge_md, encoding="utf-8")
+            study_url_path = f"knowledge/{date_str}/"
 
         # 3) 홈 (content/_index.md) = 최신 summary + 아카이브 안내
         self._update_home(
@@ -356,7 +384,9 @@ class BlogPublisher:
             "arxiv · HuggingFace Papers · GitHub Trending · Bluesky"
             "</p>\n"
             '  <p class="ai-home-links">'
-            '<a href="posts/">📚 발행 아카이브</a>'
+            '<a href="posts/">📰 주간 요약</a>'
+            '<span class="ai-dot">·</span>'
+            '<a href="knowledge/">📚 학습 노트</a>'
             '<span class="ai-dot">·</span>'
             '<a href="tags/">🏷 태그</a>'
             '<span class="ai-dot">·</span>'
