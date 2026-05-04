@@ -1,0 +1,82 @@
+name: Republish Blog (UI/UX only)
+
+# UI/UX·publisher 템플릿·블로그 CSS·Hugo 설정 변경을
+# LLM/크롤 없이 마지막 수집 데이터로만 재발행하는 가벼운 워크플로.
+#
+# 동작 흐름:
+#   1) ai_news_agent main 체크아웃
+#   2) reports-cache 브랜치를 reports/ 경로에 추가 체크아웃
+#   3) ai_news_blog 체크아웃 (push 토큰)
+#   4) republish.py 실행 → BlogPublisher가 reports/<latest>/로 다시 렌더 + push
+#
+# Anthropic / Reddit / GitHub 토큰 불필요. 토큰 비용도 0.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "재발행 사유 메모(로그용)"
+        required: false
+        default: "UI/UX 수정 반영"
+
+permissions:
+  contents: read
+
+jobs:
+  republish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    concurrency:
+      group: weekly-ai-news    # weekly.yml과 동일 그룹 → 충돌 방지
+      cancel-in-progress: false
+    steps:
+      - name: Checkout agent (main)
+        uses: actions/checkout@v4
+
+      - name: Checkout reports-cache snapshot
+        uses: actions/checkout@v4
+        with:
+          ref: reports-cache
+          path: snapshot
+          fetch-depth: 1
+
+      - name: Stage reports/ from snapshot
+        run: |
+          if [ ! -d "snapshot/reports" ]; then
+            echo "::error::snapshot/reports 디렉토리가 없습니다. weekly.yml이 한 번 이상 성공적으로 실행됐는지 확인하세요."
+            exit 1
+          fi
+          rm -rf reports
+          mv snapshot/reports reports
+          ls -la reports
+
+      - name: Checkout blog (with push token)
+        uses: actions/checkout@v4
+        with:
+          repository: altjs4510/ai_news_blog
+          token: ${{ secrets.BLOG_PUSH_TOKEN }}
+          path: ai_news_blog_repo
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install Python 3.13 and dependencies
+        run: |
+          uv python install 3.13
+          uv sync
+
+      - name: Configure git author for blog commits
+        run: |
+          git -C ai_news_blog_repo config user.email "altjs4510@gmail.com"
+          git -C ai_news_blog_repo config user.name "cookie"
+
+      - name: Republish (templates + last collected data)
+        env:
+          BLOG_REPO_PATH: ${{ github.workspace }}/ai_news_blog_repo
+          BLOG_SITE_URL: https://altjs4510.github.io/ai_news_blog
+        run: uv run python republish.py

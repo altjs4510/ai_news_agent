@@ -240,6 +240,21 @@ async def main():
             except Exception as e:
                 logger.error(f"학습 브리프 생성 실패: {e}")
 
+        # publish 직전, republish 워크플로가 동일 데이터로 재실행할 수 있도록 메타 저장.
+        try:
+            meta = {
+                "date_str": date_str,
+                "headline": headline or "",
+                "spotlight": spotlight or {},
+                "keywords": list(keywords or []),
+                "has_study": bool(study_md_written),
+            }
+            with open(f"{report_path}/meta.json", "w", encoding="utf-8") as mf:
+                json.dump(meta, mf, ensure_ascii=False, indent=2)
+            logger.info("meta.json 저장 완료 (republish 호환)")
+        except Exception as e:
+            logger.error(f"meta.json 저장 실패: {e}")
+
         blog_url = None
         if ENABLE_BLOG:
             try:
