@@ -92,6 +92,82 @@ class BlogPublisher:
         if not idx.exists() or idx.read_text(encoding="utf-8") != desired:
             idx.write_text(desired, encoding="utf-8")
 
+    def _scan_knowledge_entries(self) -> dict[str, dict]:
+        """모든 content/knowledge/<date>.md를 스캔해 {date_str: {title, tags}} 반환."""
+        knowledge_dir = self.blog_repo / "content" / "knowledge"
+        entries: dict[str, dict] = {}
+        if not knowledge_dir.is_dir():
+            return entries
+        for md in sorted(knowledge_dir.glob("*.md")):
+            if md.name == "_index.md":
+                continue
+            date = md.stem
+            try:
+                text = md.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            title_m = re.search(r'^title:\s*"(.+?)"', text, re.M)
+            tags_m = re.search(r'^tags:\s*\[(.+?)\]', text, re.M)
+            title = title_m.group(1) if title_m else date
+            tags = []
+            if tags_m:
+                for raw in tags_m.group(1).split(","):
+                    t = raw.strip().strip('"').strip("'").strip()
+                    if t:
+                        tags.append(t)
+            entries[date] = {"title": title, "tags": tags}
+        return entries
+
+    def _build_knowledge_sidebar_html(self, current_date_str: str | None = None) -> str:
+        """카테고리(태그) 트리 사이드바. 각 노드는 <details>/<summary>로 펼침."""
+        entries = self._scan_knowledge_entries()
+        if not entries:
+            return ""
+
+        # 태그 → 엔트리 그룹핑 (날짜 desc)
+        by_tag: dict[str, list[tuple[str, str]]] = {}
+        for date, info in entries.items():
+            for tag in info["tags"]:
+                by_tag.setdefault(tag, []).append((date, info["title"]))
+        for tag in by_tag:
+            by_tag[tag].sort(key=lambda x: x[0], reverse=True)
+        sorted_tags = sorted(by_tag.items(), key=lambda x: (-len(x[1]), x[0]))
+
+        blocks = []
+        for tag, items in sorted_tags:
+            tag_e = tag.replace("&", "&amp;").replace("<", "&lt;")
+            # 현재 페이지가 이 카테고리에 속하면 펼친 상태로 시작
+            is_open = any(d == current_date_str for d, _ in items) or len(by_tag) <= 5
+            open_attr = " open" if is_open else ""
+            li_html = []
+            for date, title in items:
+                display_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+                t = title.replace("&", "&amp;").replace("<", "&lt;")
+                short_t = t[:48] + ("…" if len(t) > 48 else "")
+                cls = ' class="current"' if date == current_date_str else ""
+                li_html.append(
+                    f'<li><a href="../{date}/"{cls}>'
+                    f'<span class="kdate">{display_date}</span>'
+                    f'<span class="ktitle">{short_t}</span>'
+                    f"</a></li>"
+                )
+            blocks.append(
+                f'<details class="ai-cat"{open_attr}>'
+                f'<summary><span class="catname">#{tag_e}</span>'
+                f'<span class="catcount">{len(items)}</span></summary>'
+                f'<ul>{"".join(li_html)}</ul>'
+                f"</details>"
+            )
+
+        return (
+            '<aside class="ai-knowledge-sidebar">\n'
+            '  <p class="ai-eyebrow">CATEGORIES</p>\n'
+            '  <nav class="ai-cat-tree">'
+            + "".join(blocks)
+            + "</nav>\n"
+            "</aside>"
+        )
+
     def _refresh_knowledge_index(self) -> None:
         """/knowledge/ 인덱스 페이지 상단에 태그 칩 스트립을 누적 emit.
 
@@ -309,6 +385,22 @@ class BlogPublisher:
                 "KNOWLEDGE", display_date, "학습 노트", knowledge_h1
             )
 
+            # ▶ 새 entry를 디렉토리에 먼저 (빈 placeholder로) 두면 스캔 시 자기 자신도 포함.
+            #   placeholder는 frontmatter만 — 사이드바 빌드용.
+            placeholder = (
+                "---\n"
+                f'title: "{sp_title_yaml or display_date}"\n'
+                f"date: {display_date}\n"
+                + tags_yaml_k
+                + "---\n"
+            )
+            (knowledge_dir / f"{date_str}.md").write_text(placeholder, encoding="utf-8")
+
+            sidebar_html = self._build_knowledge_sidebar_html(current_date_str=date_str)
+
+            # 본문을 shell로 감싸 좌측 카테고리 트리 + 우측 article 레이아웃 구성.
+            # goldmark는 raw HTML 블록 안의 markdown을 처리하지 않으므로
+            # 태그 주변에 빈 줄을 두어 markdown 모드를 다시 활성화한다.
             knowledge_md = (
                 "---\n"
                 f'title: "{sp_title_yaml or display_date}"\n'
@@ -316,10 +408,16 @@ class BlogPublisher:
                 + (f'source_url: "{sp_url}"\n' if sp_url else "")
                 + tags_yaml_k
                 + "---\n\n"
+                '<div class="ai-knowledge-shell">\n\n'
+                + sidebar_html
+                + "\n\n"
+                '<article class="ai-knowledge-article">\n\n'
                 + knowledge_hero
                 + origin_block
                 + study_body
-                + "\n"
+                + "\n\n"
+                "</article>\n\n"
+                "</div>\n"
             )
             (knowledge_dir / f"{date_str}.md").write_text(knowledge_md, encoding="utf-8")
             study_url_path = f"knowledge/{date_str}/"
