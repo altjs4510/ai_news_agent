@@ -171,7 +171,7 @@ class BlogPublisher:
                 short_t = t[:48] + ("…" if len(t) > 48 else "")
                 cls = ' class="current"' if date == current_date_str else ""
                 li_html.append(
-                    f'<li><a href="/knowledge/{date}/"{cls}>'
+                    f'<li><a href="{self.site_url}/knowledge/{date}/"{cls}>'
                     f'<span class="kdate">{display_date}</span>'
                     f'<span class="ktitle">{short_t}</span>'
                     f"</a></li>"

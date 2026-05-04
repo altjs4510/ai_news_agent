@@ -37,6 +37,10 @@ def _knowledge_dir() -> Path:
     return _blog_repo() / "content" / "knowledge"
 
 
+def _site_url() -> str:
+    return os.getenv("BLOG_SITE_URL", "https://altjs4510.github.io/ai_news_blog").rstrip("/")
+
+
 def _parse_title(text: str) -> str:
     m = re.search(r'^title:\s*"(.+?)"', text, re.M)
     return m.group(1) if m else ""
@@ -123,7 +127,7 @@ def _build_related_block(related: list[dict]) -> str:
         display = f"{d[:4]}-{d[4:6]}-{d[6:]}"
         short = title[:48] + ("…" if len(title) > 48 else "")
         items.append(
-            f'<li><a href="/knowledge/{d}/">'
+            f'<li><a href="{_site_url()}/knowledge/{d}/">'
             f'<span class="kdate">{display}</span>'
             f'<span class="ktitle">{short}</span>'
             f"</a></li>"
