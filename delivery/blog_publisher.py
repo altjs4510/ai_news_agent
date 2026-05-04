@@ -268,7 +268,7 @@ class BlogPublisher:
             '<span class="ai-dot">·</span>'
             '<a href="tags/">🏷 태그</a>'
             '<span class="ai-dot">·</span>'
-            '<a href="index.xml">🛰 RSS</a>'
+            '<a href="posts/index.xml">🛰 RSS</a>'
             '<span class="ai-dot">·</span>'
             '<a href="about/">📓 소개</a>'
             "</p>\n"
