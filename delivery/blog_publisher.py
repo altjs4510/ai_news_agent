@@ -58,6 +58,28 @@ class BlogPublisher:
             "BLOG_SITE_URL", "https://altjs4510.github.io/ai_news_blog"
         ).rstrip("/")
 
+    @staticmethod
+    def _section_index_text(title: str, intro: str) -> str:
+        """Hextra 'blog' 레이아웃을 cascade로 강제 — 좌측 docs sidebar 제거."""
+        return (
+            "---\n"
+            f'title: "{title}"\n'
+            "type: blog\n"
+            "cascade:\n"
+            "  type: blog\n"
+            "  toc: false\n"
+            "toc: false\n"
+            "---\n\n"
+            f"{intro}\n"
+        )
+
+    def _ensure_blog_section(self, section_dir: Path, title: str, intro: str) -> None:
+        section_dir.mkdir(parents=True, exist_ok=True)
+        idx = section_dir / "_index.md"
+        desired = self._section_index_text(title, intro)
+        if not idx.exists() or idx.read_text(encoding="utf-8") != desired:
+            idx.write_text(desired, encoding="utf-8")
+
     def publish(
         self,
         report_dir: str,
@@ -76,6 +98,20 @@ class BlogPublisher:
         if not src.is_dir():
             logger.error(f"리포트 디렉토리가 없습니다: {report_dir}")
             return None
+
+        # 두 섹션의 _index.md를 항상 'blog' 레이아웃으로 정규화 — Hextra 좌측
+        # docs 사이드바 제거. 사용자가 본 "Knowledge가 사라지고 지식이 요약 하위에"
+        # 인상은 docs 트리가 두 섹션을 한 사이드바에 펼친 결과였음.
+        self._ensure_blog_section(
+            self.posts_dir,
+            "주간 요약 (Posts)",
+            "매주 월요일 자동 발행되는 AI 동향 요약·통합 인사이트·원본 수집 데이터.",
+        )
+        self._ensure_blog_section(
+            self.blog_repo / "content" / "knowledge",
+            "학습 노트 (Knowledge)",
+            "매주 spotlight 자료 1편을 한국어로 정리한 학습 브리프 누적 아카이브.",
+        )
 
         target = self.posts_dir / date_str
         if target.exists():
@@ -187,19 +223,8 @@ class BlogPublisher:
             sp_url = (spotlight or {}).get("url", "").strip() if isinstance(spotlight, dict) else ""
             sp_title_yaml = sp_title.replace('"', "'")
 
-            # knowledge 섹션 디렉토리 + 최초 1회 _index.md 생성
+            # _ensure_blog_section()이 publish 시작부에서 이미 _index.md 작성 완료.
             knowledge_dir = self.blog_repo / "content" / "knowledge"
-            knowledge_dir.mkdir(parents=True, exist_ok=True)
-            section_index = knowledge_dir / "_index.md"
-            if not section_index.exists():
-                section_index.write_text(
-                    "---\n"
-                    'title: "Knowledge"\n'
-                    "---\n\n"
-                    "매주 spotlight로 뽑힌 자료를 깊이 정리한 학습 브리프 모음.\n"
-                    "발행 아카이브와 별도로, 주제별로 누적되는 지식 섹션입니다.\n",
-                    encoding="utf-8",
-                )
 
             # 본문 상단 — 원문 + 출처 호 백링크
             origin_block_parts = []
