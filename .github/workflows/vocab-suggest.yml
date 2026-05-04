@@ -1,0 +1,63 @@
+name: Vocabulary 진화 제안 (monthly)
+
+# 매월 1일 Opus가 누적 분포를 분석해 GitHub Issue로 진화안 제안.
+# 사람이 검토 후 동의하면 main.py CATEGORY_VOCABULARY 편집 → curate.yml 재분류.
+
+on:
+  schedule:
+    - cron: "0 2 1 * *"   # 매월 1일 02:00 UTC = 11:00 KST
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "수동 실행 사유"
+        required: false
+        default: "manual"
+
+permissions:
+  issues: write    # gh issue create 권한
+  contents: read
+
+jobs:
+  suggest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout agent
+        uses: actions/checkout@v4
+
+      - name: Checkout blog (read-only)
+        uses: actions/checkout@v4
+        with:
+          repository: altjs4510/ai_news_blog
+          token: ${{ secrets.BLOG_PUSH_TOKEN }}
+          path: ai_news_blog_repo
+          fetch-depth: 1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install Python 3.13 and dependencies
+        run: |
+          uv python install 3.13
+          uv sync
+
+      - name: Run vocabulary suggestion
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BLOG_REPO_PATH: ${{ github.workspace }}/ai_news_blog_repo
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: uv run python vocab_suggest.py
+
+      - name: Notify Slack on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\":\":x: *Vocabulary 제안 실패*\\n<${RUN_URL}|workflow run 보기>\"}" \
+            "$SLACK_WEBHOOK_URL"
