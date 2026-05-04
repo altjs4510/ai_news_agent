@@ -49,14 +49,9 @@ def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight
     ]
     # 보일러플레이트 라벨("TL;DR", "이번 호 PoC / 공부 추천", "이번 호 키워드",
     # "꼭 읽어보세요 — 함께 보면 좋은 자료") 매주 동일하게 반복돼 의미 없으므로 제거.
-    # 이모지(📌🎯📖🏷)가 섹션 의미를 충분히 전달.
-    if headline:
-        lines += [
-            '{{< callout emoji="📌" >}}',
-            headline,
-            "{{< /callout >}}",
-            "",
-        ]
+    # 이모지(🎯📖🏷)가 섹션 의미를 충분히 전달.
+    # headline 자체는 publisher가 detail page hero에서 h1으로 렌더하므로
+    # summary.md 안에 별도 callout으로 또 노출하지 않는다(중복 회피).
     if spotlight and isinstance(spotlight, dict) and spotlight.get("title"):
         title = spotlight.get("title", "")
         url = spotlight.get("url", "")
