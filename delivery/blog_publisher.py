@@ -344,38 +344,49 @@ class BlogPublisher:
         (self.blog_repo / "content" / "_index.md").write_text(page, encoding="utf-8")
 
     def _git_commit_and_push(self, date_str: str) -> bool:
-        try:
-            subprocess.run(
-                ["git", "-C", str(self.blog_repo), "add", "content/"],
-                check=True,
+        """블로그 레포에 commit 후 push. push race가 흔해서 rebase 재시도 포함."""
+
+        def _run(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                ["git", "-C", str(self.blog_repo), *args],
+                check=check,
                 capture_output=True,
             )
-            staged = subprocess.run(
-                ["git", "-C", str(self.blog_repo), "diff", "--cached", "--quiet"]
-            )
+
+        try:
+            _run(["add", "content/"])
+            staged = _run(["diff", "--cached", "--quiet"], check=False)
             if staged.returncode == 0:
                 logger.info("블로그에 변경 사항이 없어 commit을 건너뜁니다.")
                 return True
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(self.blog_repo),
-                    "commit",
-                    "-m",
-                    f"chore: publish {date_str} digest",
-                ],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                ["git", "-C", str(self.blog_repo), "push"],
-                check=True,
-                capture_output=True,
-            )
-            logger.info(f"블로그 publish 완료: {date_str}")
-            return True
+            _run(["commit", "-m", f"chore: publish {date_str} digest"])
         except subprocess.CalledProcessError as e:
             stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
-            logger.error(f"git 동작 실패: {e} / {stderr}")
+            logger.error(f"git 커밋 실패: {e} / {stderr}")
             return False
+
+        # 푸시 race 대비. 최대 3회 시도: push 실패 시 pull --rebase 후 재시도.
+        # 동시에 다른 사용자가 같은 ref에 push했어도 자동 회복.
+        for attempt in range(3):
+            try:
+                _run(["push"])
+                logger.info(f"블로그 publish 완료: {date_str}")
+                return True
+            except subprocess.CalledProcessError as e:
+                stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
+                logger.warning(
+                    f"git push 실패 (시도 {attempt + 1}/3): {stderr.strip()[:200]}"
+                )
+                # 마지막 시도 실패는 그대로 종료
+                if attempt == 2:
+                    logger.error(f"git push 최종 실패: {stderr}")
+                    return False
+                # pull --rebase로 원격 변경 흡수 후 재시도
+                try:
+                    _run(["pull", "--rebase", "origin", "main"])
+                    logger.info("pull --rebase 완료, push 재시도")
+                except subprocess.CalledProcessError as pe:
+                    pe_stderr = pe.stderr.decode("utf-8", errors="replace") if pe.stderr else ""
+                    logger.error(f"pull --rebase 실패: {pe_stderr}")
+                    return False
+        return False

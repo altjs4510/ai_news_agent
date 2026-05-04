@@ -256,6 +256,7 @@ async def main():
             logger.error(f"meta.json 저장 실패: {e}")
 
         blog_url = None
+        blog_publish_error: Exception | str | None = None
         if ENABLE_BLOG:
             try:
                 publisher = BlogPublisher()
@@ -269,7 +270,11 @@ async def main():
                 )
                 if blog_url:
                     logger.info(f"블로그 publish 완료: {blog_url}")
+                else:
+                    blog_publish_error = "publisher.publish() returned None"
+                    logger.error("블로그 publish 실패 (publish가 None 반환)")
             except Exception as e:
+                blog_publish_error = e
                 logger.error(f"블로그 publish 중 오류 발생: {str(e)}")
 
         page_id = None
@@ -302,11 +307,19 @@ async def main():
             except Exception as email_error:
                 logger.error(f"이메일 발송 중 오류 발생: {str(email_error)}")
 
+        # 블로그 publish가 실패했다면 워크플로도 실패로 보고해야 함.
+        # (그래야 GitHub Actions가 빨간 X를 보여주고 Slack 알림이 나감)
+        if blog_publish_error is not None:
+            logger.error(f"=== 작업 종료(블로그 publish 실패) ===: {blog_publish_error}")
+            raise RuntimeError(f"Blog publish failed: {blog_publish_error}")
+
         logger.info("=== 작업 완료 ===")
 
     except Exception as e:
         logger.error(f"실행 중 오류 발생: {str(e)}")
         traceback.print_exc()
+        # 호출자가 종료 코드 non-zero로 떨어지도록 재발생
+        raise
 
 async def evaluate_post_relevance(title):
     """포스트 제목을 평가하여 AI 에이전트와의 관련성을 판단합니다."""
