@@ -59,6 +59,18 @@ class BlogPublisher:
         ).rstrip("/")
 
     @staticmethod
+    def _detail_hero_html(kind: str, display_date: str, meta: str, title: str) -> str:
+        """상세 페이지 hero — 홈 hero와 같은 결.
+        kind 텍스트는 섹션 인덱스로 돌아가는 클릭 가능한 백링크가 된다."""
+        t = (title or "").strip().replace("&", "&amp;").replace("<", "&lt;")
+        return (
+            '<header class="ai-post-hero">\n'
+            f'  <p class="ai-eyebrow"><a class="ai-back" href="../">{kind}</a> · {display_date} · {meta}</p>\n'
+            f'  <h1 class="ai-post-title">{t}</h1>\n'
+            "</header>\n\n"
+        )
+
+    @staticmethod
     def _section_index_text(title: str) -> str:
         """Hextra 'blog' 레이아웃을 cascade로 강제 — 좌측 docs sidebar 제거.
         섹션 페이지 본문은 비워둔다(h1·intro CSS hide와 짝). title은 브라우저 탭용."""
@@ -161,24 +173,30 @@ class BlogPublisher:
             quoted = ", ".join(f'"{t}"' for t in clean_tags)
             tags_yaml = f"tags: [{quoted}]\n"
 
+        # 상세 페이지 hero — 홈 hero와 같은 톤. headline이 비어 있으면 일자 fallback.
+        post_h1 = (headline or f"{display_date} AI 동향").strip()
+        post_hero = self._detail_hero_html("POSTS", display_date, "주간 요약", post_h1)
+
         if sections:
             index_md = (
                 "---\n"
-                f'title: "{display_date} AI 동향 요약"\n'
+                f'title: "{post_h1}"\n'   # frontmatter title = headline (브라우저 탭 + 카드)
                 f"date: {display_date}\n"
                 + tags_yaml
                 + "---\n\n"
+                + post_hero
                 + "\n\n---\n\n".join(sections)
                 + "\n"
             )
         else:
             index_md = (
                 "---\n"
-                f'title: "{display_date} AI 동향"\n'
+                f'title: "{post_h1}"\n'
                 f"date: {display_date}\n"
                 + tags_yaml
                 + "---\n\n"
-                "이번 호는 요약 생성에 실패했습니다. 원본 수집 데이터는 [raw](raw) 페이지에서 확인할 수 있습니다.\n"
+                + post_hero
+                + "이번 호는 요약 생성에 실패했습니다. 원본 수집 데이터는 [raw](raw) 페이지에서 확인할 수 있습니다.\n"
             )
         (target / "_index.md").write_text(index_md, encoding="utf-8")
 
@@ -232,6 +250,12 @@ class BlogPublisher:
                 quoted = ", ".join(f'"{t}"' for t in clean_tags)
                 tags_yaml_k = f"tags: [{quoted}]\n"
 
+            # 상세 페이지 hero — 홈/포스트와 같은 결.
+            knowledge_h1 = sp_title or display_date
+            knowledge_hero = self._detail_hero_html(
+                "KNOWLEDGE", display_date, "학습 노트", knowledge_h1
+            )
+
             knowledge_md = (
                 "---\n"
                 f'title: "{sp_title_yaml or display_date}"\n'
@@ -239,6 +263,7 @@ class BlogPublisher:
                 + (f'source_url: "{sp_url}"\n' if sp_url else "")
                 + tags_yaml_k
                 + "---\n\n"
+                + knowledge_hero
                 + origin_block
                 + study_body
                 + "\n"
