@@ -193,6 +193,37 @@ class BlogPublisher:
             "</aside>"
         )
 
+    def refresh_all_knowledge_sidebars(self) -> int:
+        """모든 content/knowledge/<date>.md의 사이드바 HTML 블록 갱신.
+
+        curate.py가 frontmatter categories를 변경한 뒤 호출.
+        index와 detail 모두 같은 사이드바 빌더를 씀.
+        반환: 갱신된 파일 수.
+        """
+        knowledge_dir = self.blog_repo / "content" / "knowledge"
+        if not knowledge_dir.is_dir():
+            return 0
+        updated = 0
+        sidebar_re = re.compile(
+            r'<aside class="ai-knowledge-sidebar">.*?</aside>', re.S
+        )
+        for md in knowledge_dir.glob("*.md"):
+            if md.name == "_index.md":
+                continue
+            text = md.read_text(encoding="utf-8")
+            date_str = md.stem
+            new_sidebar = self._build_knowledge_sidebar_html(current_date_str=date_str)
+            if not new_sidebar:
+                continue
+            new_text, count = sidebar_re.subn(new_sidebar, text, count=1)
+            if count and new_text != text:
+                md.write_text(new_text, encoding="utf-8")
+                updated += 1
+        # /knowledge/_index.md도 같이 갱신
+        self._refresh_knowledge_index()
+        logger.info(f"사이드바 갱신: {updated}건")
+        return updated
+
     def _refresh_knowledge_index(self) -> None:
         """/knowledge/ 인덱스 페이지에 좌측 카테고리 사이드바를 emit.
         Hextra가 자동 출력하는 글 카드들과 CSS Grid로 좌-우 배치된다.

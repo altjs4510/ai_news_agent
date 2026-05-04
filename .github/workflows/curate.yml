@@ -1,0 +1,63 @@
+name: Curate Blog (LLM-managed categories)
+
+# 누적 학습 노트 카테고리 재분류 — 블로그 자체를 AI가 관리하는 첫 사이클.
+# weekly.yml 완료 후 자동 실행 + 수동 트리거.
+# Sonnet 4.6 사용으로 노트당 ~$0.02. CATEGORY_VOCABULARY 변경 후 즉시 일괄 재분류 용도로도 적합.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "큐레이션 사유 메모"
+        required: false
+        default: "manual"
+  workflow_run:
+    workflows: ["Weekly AI News Digest"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  curate:
+    # weekly.yml이 success일 때만 (workflow_run 트리거 시 cancelled/failed면 skip)
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    concurrency:
+      group: weekly-ai-news    # weekly.yml과 같은 그룹 → 충돌 방지
+      cancel-in-progress: false
+    steps:
+      - name: Checkout agent
+        uses: actions/checkout@v4
+
+      - name: Checkout blog (with push token)
+        uses: actions/checkout@v4
+        with:
+          repository: altjs4510/ai_news_blog
+          token: ${{ secrets.BLOG_PUSH_TOKEN }}
+          path: ai_news_blog_repo
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install Python 3.13 and dependencies
+        run: |
+          uv python install 3.13
+          uv sync
+
+      - name: Configure git author for blog commits
+        run: |
+          git -C ai_news_blog_repo config user.email "altjs4510@gmail.com"
+          git -C ai_news_blog_repo config user.name "cookie (curate-bot)"
+
+      - name: Run curation
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BLOG_REPO_PATH: ${{ github.workspace }}/ai_news_blog_repo
+        run: uv run python curate.py
