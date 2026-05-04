@@ -247,10 +247,12 @@ async def main():
                 try:
                     with open(cached_meta_path, "r", encoding="utf-8") as cf:
                         cached = json.load(cf)
+                    # 캐시 schema 검증 — additional_picks 키가 누락된 구버전이면 재생성
                     if (
                         cached.get("headline")
                         and cached.get("spotlight")
                         and cached.get("keywords")
+                        and "additional_picks" in cached
                     ):
                         headline = cached.get("headline", "")
                         spotlight = cached.get("spotlight") or None
