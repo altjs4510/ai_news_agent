@@ -58,7 +58,14 @@ class BlogPublisher:
             "BLOG_SITE_URL", "https://altjs4510.github.io/ai_news_blog"
         ).rstrip("/")
 
-    def publish(self, report_dir: str, date_str: str, keywords: list[str] | None = None) -> str | None:
+    def publish(
+        self,
+        report_dir: str,
+        date_str: str,
+        keywords: list[str] | None = None,
+        headline: str | None = None,
+        spotlight: dict | None = None,
+    ) -> str | None:
         if not self.blog_repo.is_dir():
             logger.error(f"블로그 레포를 찾을 수 없습니다: {self.blog_repo}")
             return None
@@ -157,45 +164,129 @@ class BlogPublisher:
             (target / "raw.md").write_text(raw_md, encoding="utf-8")
 
         # 3) 홈 (content/_index.md) = 최신 summary + 아카이브 안내
-        self._update_home(date_str, display_date, summary_body)
+        self._update_home(date_str, display_date, combined_body, headline, spotlight, clean_tags)
 
         if not self._git_commit_and_push(date_str):
             return None
 
         return f"{self.site_url}/posts/{date_str}/"
 
-    def _update_home(self, date_str: str, display_date: str, summary_body: str) -> None:
-        # 최신 호 카드 — 줄 전체가 클릭 가능. Hextra cards 쇼트코드 사용.
-        latest_card = (
-            "{{< cards >}}\n"
-            f'  {{{{< card link="posts/{date_str}/" '
-            f'title="📰 {display_date} — 최신 호 보기" '
-            f'subtitle="이번 주 AI 동향 요약 + 통합 인사이트 + 원본 수집 데이터" >}}}}\n'
-            "{{< /cards >}}\n\n"
+    def _update_home(
+        self,
+        date_str: str,
+        display_date: str,
+        body_text: str,
+        headline: str | None = None,
+        spotlight: dict | None = None,
+        keywords: list[str] | None = None,
+    ) -> None:
+        """홈 _index.md 작성. body_text는 combined_insights 본문(요약 callout 중복 회피)."""
+        # ─ Hero ────────────────────────────────────────────────────────────
+        # Apple 톤: 작은 eyebrow + 거대한 헤드라인 + 무거운 메타.
+        # goldmark unsafe=true 가 켜져 있어 raw HTML 통과.
+        headline_text = (headline or f"{display_date} AI 동향").strip()
+        # HTML escape 최소만 — 본문 큐레이션은 Claude가 만들어 신뢰 가능 텍스트.
+        headline_html = headline_text.replace("&", "&amp;").replace("<", "&lt;")
+
+        hero_html = (
+            '<section class="ai-home-hero">\n'
+            '  <p class="ai-eyebrow">AI NEWS · WEEKLY DIGEST</p>\n'
+            f'  <h1 class="ai-headline">{headline_html}</h1>\n'
+            f'  <p class="ai-meta">{display_date} · 매주 월요일 자동 발행</p>\n'
+            f'  <a class="ai-cta" href="posts/{date_str}/">\n'
+            '    <span class="ai-cta-label">최신 호 전체 보기</span>\n'
+            '    <span class="ai-cta-arrow" aria-hidden="true">→</span>\n'
+            "  </a>\n"
+            "</section>\n\n"
         )
 
-        intro = (
+        # ─ Spotlight 카드 ─────────────────────────────────────────────────
+        spotlight_html = ""
+        if spotlight and isinstance(spotlight, dict) and spotlight.get("title"):
+            sp_title = (spotlight.get("title") or "").strip()
+            sp_url = (spotlight.get("url") or "").strip()
+            sp_why = (spotlight.get("why") or "").strip()
+            sp_app = (spotlight.get("application") or "").strip()
+            sp_title_html = sp_title.replace("&", "&amp;").replace("<", "&lt;")
+            sp_why_html = sp_why.replace("&", "&amp;").replace("<", "&lt;")
+            sp_app_html = sp_app.replace("&", "&amp;").replace("<", "&lt;")
+
+            title_block = (
+                f'<a class="ai-spotlight-title" href="{sp_url}" '
+                f'target="_blank" rel="noopener">{sp_title_html}<span class="ai-spotlight-arrow">↗</span></a>'
+                if sp_url
+                else f'<span class="ai-spotlight-title">{sp_title_html}</span>'
+            )
+
+            spotlight_html = (
+                '<aside class="ai-spotlight">\n'
+                '  <p class="ai-eyebrow ai-spotlight-eyebrow">✦ THIS WEEK\'S PICK</p>\n'
+                f"  {title_block}\n"
+                f'  <p class="ai-spotlight-why">{sp_why_html}</p>\n'
+                '  <p class="ai-spotlight-app">'
+                '<span class="ai-spotlight-app-label">접목 →</span> '
+                f"{sp_app_html}</p>\n"
+                "</aside>\n\n"
+            )
+
+        # ─ Tag chips ──────────────────────────────────────────────────────
+        tags_html = ""
+        if keywords:
+            chips = "".join(
+                f'<a class="ai-chip" href="tags/{k}/">#{k}</a>'
+                for k in keywords
+            )
+            tags_html = f'<nav class="ai-chips">{chips}</nav>\n\n'
+
+        # ─ Body (통합 인사이트 본문) ────────────────────────────────────
+        body = body_text.strip() if body_text else ""
+        body_block = (
+            (
+                '<section class="ai-home-body">\n\n'
+                f"{body}\n\n"
+                "</section>\n\n"
+            )
+            if body
+            else ""
+        )
+
+        # ─ Footer (소스·아카이브) ─────────────────────────────────────────
+        footer = (
+            '<footer class="ai-home-footer">\n'
+            '  <p class="ai-eyebrow">SOURCES</p>\n'
+            '  <p class="ai-source-list">'
+            "Anthropic · OpenAI · Google · DeepMind · "
+            "Simon Willison · Latent Space · LangChain · LlamaIndex · "
+            "AutoGen · CrewAI · Cursor · Cline · Aider · "
+            "Karpathy · Lilian Weng · Hamel Husain · "
+            "TLDR AI · The Rundown · AlphaSignal · Ben's Bites · The Batch · "
+            "Reddit · Hacker News · Product Hunt · TechCrunch AI · "
+            "arxiv · HuggingFace Papers · GitHub Trending · Bluesky"
+            "</p>\n"
+            '  <p class="ai-home-links">'
+            '<a href="posts/">📚 발행 아카이브</a>'
+            '<span class="ai-dot">·</span>'
+            '<a href="tags/">🏷 태그</a>'
+            '<span class="ai-dot">·</span>'
+            '<a href="index.xml">🛰 RSS</a>'
+            '<span class="ai-dot">·</span>'
+            '<a href="about/">📓 소개</a>'
+            "</p>\n"
+            "</footer>\n"
+        )
+
+        page = (
             "---\n"
             'title: "AI News Digest"\n'
             "toc: false\n"
             "---\n\n"
-            "{{< callout emoji=\"🗞\" >}}\n"
-            "**매주 월요일 자동 발행** — 지난 7일치 AI 동향을 공식 블로그·커뮤니티·뉴스·학술·오픈소스에서 수집해, "
-            "Anthropic Claude로 통합 인사이트를 만든 뒤 자동으로 발행합니다.\n"
-            "{{< /callout >}}\n\n"
-            "**수집 소스** — Anthropic·OpenAI·Google·DeepMind 공식 블로그, "
-            "Reddit (AI 서브레딧), Hacker News, Product Hunt, TechCrunch AI, "
-            "arxiv (cs.AI/cs.CL), HuggingFace Papers, GitHub Trending, Bluesky. "
-            "([자세히](about/))\n\n"
-            + latest_card
+            + hero_html
+            + spotlight_html
+            + tags_html
+            + body_block
+            + footer
         )
-        body = summary_body.strip() if summary_body else "_(이번 호는 요약 생성에 실패했습니다.)_"
-        archive = (
-            "\n\n---\n\n"
-            "📚 [발행 아카이브 전체 보기](posts/) · "
-            "🛰 [RSS 구독](index.xml)\n"
-        )
-        (self.blog_repo / "content" / "_index.md").write_text(intro + body + archive, encoding="utf-8")
+        (self.blog_repo / "content" / "_index.md").write_text(page, encoding="utf-8")
 
     def _git_commit_and_push(self, date_str: str) -> bool:
         try:
