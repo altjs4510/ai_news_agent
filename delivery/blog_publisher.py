@@ -169,57 +169,22 @@ class BlogPublisher:
         )
 
     def _refresh_knowledge_index(self) -> None:
-        """/knowledge/ 인덱스 페이지 상단에 태그 칩 스트립을 누적 emit.
-
-        모든 content/knowledge/<date>.md 파일의 frontmatter tags를 집계해
-        빈도순으로 카테고리 칩을 만든다. 각 칩은 /tags/<태그>/ 로 라우트되어
-        태그별 학습 노트 + 주간 요약 모두 묶어서 보여준다.
+        """/knowledge/ 인덱스 페이지에 좌측 카테고리 사이드바를 emit.
+        Hextra가 자동 출력하는 글 카드들과 CSS Grid로 좌-우 배치된다.
         """
         knowledge_dir = self.blog_repo / "content" / "knowledge"
         if not knowledge_dir.is_dir():
             return
 
-        tag_counts: dict[str, int] = {}
-        for md in knowledge_dir.glob("*.md"):
-            if md.name == "_index.md":
-                continue
-            try:
-                text = md.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            m = re.search(r"^tags:\s*\[(.+?)\]", text, re.M)
-            if not m:
-                continue
-            for raw in m.group(1).split(","):
-                t = raw.strip().strip('"').strip("'").strip()
-                if t:
-                    tag_counts[t] = tag_counts.get(t, 0) + 1
-
+        sidebar_html = self._build_knowledge_sidebar_html(current_date_str=None)
         base = self._section_index_text("Knowledge")
-        if not tag_counts:
+        if not sidebar_html:
             (knowledge_dir / "_index.md").write_text(base, encoding="utf-8")
             return
 
-        # 빈도순 정렬, 상위 30개 cap
-        sorted_tags = sorted(tag_counts.items(), key=lambda x: (-x[1], x[0]))[:30]
-        chip_html = []
-        for tag, cnt in sorted_tags:
-            tag_e = tag.replace("&", "&amp;").replace("<", "&lt;")
-            chip_html.append(
-                f'<a class="ai-chip" href="../tags/{tag}/">'
-                f'#{tag_e}<span class="ai-chip-count">{cnt}</span>'
-                f"</a>"
-            )
-
-        intro = (
-            '\n<section class="ai-knowledge-intro">\n'
-            '  <p class="ai-eyebrow">CATEGORIES · 카테고리</p>\n'
-            '  <nav class="ai-chips ai-knowledge-chips">\n    '
-            + "".join(chip_html)
-            + "\n  </nav>\n"
-            "</section>\n"
-        )
-        (knowledge_dir / "_index.md").write_text(base + intro, encoding="utf-8")
+        # 사이드바만 본문에 두고, Hextra가 자체 emit하는 카드 그리드는 CSS로 우측 컬럼 배치.
+        # main 그리드에서 사이드바와 카드가 함께 보이도록 .content는 display:contents로 흐려짐.
+        (knowledge_dir / "_index.md").write_text(base + "\n" + sidebar_html + "\n", encoding="utf-8")
 
     def publish(
         self,
