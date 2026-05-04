@@ -47,10 +47,13 @@ def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight
         "---",
         "",
     ]
+    # 보일러플레이트 라벨("TL;DR", "이번 호 PoC / 공부 추천", "이번 호 키워드",
+    # "꼭 읽어보세요 — 함께 보면 좋은 자료") 매주 동일하게 반복돼 의미 없으므로 제거.
+    # 이모지(📌🎯📖🏷)가 섹션 의미를 충분히 전달.
     if headline:
         lines += [
             '{{< callout emoji="📌" >}}',
-            f"**TL;DR** — {headline}",
+            headline,
             "{{< /callout >}}",
             "",
         ]
@@ -62,23 +65,19 @@ def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight
         link = f"[{title}]({url})" if url else f"**{title}**"
         lines += [
             '{{< callout emoji="🎯" >}}',
-            "**이번 호 PoC / 공부 추천**",
-            "",
             f"**{link}**",
             "",
-            f"**왜 주목** — {why}",
+            why,
             "",
-            f"**어떻게 접목** — {application}",
+            f"**접목 →** {application}",
             "{{< /callout >}}",
             "",
         ]
 
-    # 추가 추천(0~2개) — "꼭 읽어보세요" 톤. spotlight보다 가벼운 카드.
+    # 추가 추천(0~2개) — 라벨 없이 카드 리스트만.
     if additional_picks:
         lines += [
             '{{< callout emoji="📖" >}}',
-            "**꼭 읽어보세요 — 함께 보면 좋은 자료**",
-            "",
         ]
         for pick in additional_picks:
             p_title = (pick.get("title") or "").strip()
@@ -98,7 +97,7 @@ def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight
     if keywords_line:
         lines += [
             '{{< callout emoji="🏷" >}}',
-            f"**이번 호 키워드** — {keywords_line}",
+            keywords_line,
             "{{< /callout >}}",
             "",
         ]

@@ -59,8 +59,9 @@ class BlogPublisher:
         ).rstrip("/")
 
     @staticmethod
-    def _section_index_text(title: str, intro: str) -> str:
-        """Hextra 'blog' 레이아웃을 cascade로 강제 — 좌측 docs sidebar 제거."""
+    def _section_index_text(title: str) -> str:
+        """Hextra 'blog' 레이아웃을 cascade로 강제 — 좌측 docs sidebar 제거.
+        섹션 페이지 본문은 비워둔다(h1·intro CSS hide와 짝). title은 브라우저 탭용."""
         return (
             "---\n"
             f'title: "{title}"\n'
@@ -69,14 +70,13 @@ class BlogPublisher:
             "  type: blog\n"
             "  toc: false\n"
             "toc: false\n"
-            "---\n\n"
-            f"{intro}\n"
+            "---\n"
         )
 
-    def _ensure_blog_section(self, section_dir: Path, title: str, intro: str) -> None:
+    def _ensure_blog_section(self, section_dir: Path, title: str) -> None:
         section_dir.mkdir(parents=True, exist_ok=True)
         idx = section_dir / "_index.md"
-        desired = self._section_index_text(title, intro)
+        desired = self._section_index_text(title)
         if not idx.exists() or idx.read_text(encoding="utf-8") != desired:
             idx.write_text(desired, encoding="utf-8")
 
@@ -102,16 +102,8 @@ class BlogPublisher:
         # 두 섹션의 _index.md를 항상 'blog' 레이아웃으로 정규화 — Hextra 좌측
         # docs 사이드바 제거. 사용자가 본 "Knowledge가 사라지고 지식이 요약 하위에"
         # 인상은 docs 트리가 두 섹션을 한 사이드바에 펼친 결과였음.
-        self._ensure_blog_section(
-            self.posts_dir,
-            "주간 요약 (Posts)",
-            "매주 월요일 자동 발행되는 AI 동향 요약·통합 인사이트·원본 수집 데이터.",
-        )
-        self._ensure_blog_section(
-            self.blog_repo / "content" / "knowledge",
-            "학습 노트 (Knowledge)",
-            "매주 spotlight 자료 1편을 한국어로 정리한 학습 브리프 누적 아카이브.",
-        )
+        self._ensure_blog_section(self.posts_dir, "Posts")
+        self._ensure_blog_section(self.blog_repo / "content" / "knowledge", "Knowledge")
 
         target = self.posts_dir / date_str
         if target.exists():
@@ -144,12 +136,11 @@ class BlogPublisher:
         sections = []
         if summary_body:
             sections.append(summary_body)
-        # 포스트 상단에 학습 브리프 진입 배너 (별도 knowledge 섹션의 자식 글로 링크)
+        # 포스트 상단에 학습 노트 진입 배너 (별도 knowledge 섹션의 자식 글로 링크)
         if study_body:
             sections.append(
                 "{{< callout emoji=\"📚\" >}}\n"
-                "**오늘의 학습 — Spotlight 자료를 한국어로 정리한 학습 노트** "
-                f"→ [지식 섹션에서 열기]({{{{< relref \"knowledge/{date_str}\" >}}}})\n"
+                f"[학습 노트 열기 →]({{{{< relref \"knowledge/{date_str}\" >}}}})\n"
                 "{{< /callout >}}"
             )
         if combined_body:
