@@ -10,6 +10,7 @@ from sources.research_feeds import ResearchFeedCollector
 from sources.bluesky import BlueskyCollector
 from config import BLUESKY_HANDLES
 from delivery.markdown_writer import MarkdownWriter
+from delivery.study_brief import generate_study_brief
 from delivery.notion_writer import NotionWriter
 from delivery.email_sender import EmailSender
 from delivery.blog_publisher import BlogPublisher
@@ -223,6 +224,22 @@ async def main():
             except Exception as e:
                 logger.error(f"요약/키워드 생성 실패: {e}")
 
+        # Spotlight가 정해지면 그 자료 한 건을 깊이 공부할 수 있도록 학습 브리프 생성.
+        # 실패해도 publish 자체는 진행.
+        study_md_written = False
+        if spotlight and isinstance(spotlight, dict) and spotlight.get("url"):
+            try:
+                logger.info(f"학습 브리프 생성 중: {spotlight.get('title')}")
+                brief = await generate_study_brief(spotlight)
+                if brief:
+                    study_path = f"{report_path}/study.md"
+                    with open(study_path, "w", encoding="utf-8") as f:
+                        f.write(brief)
+                    study_md_written = True
+                    logger.info(f"학습 브리프 저장 완료: {study_path}")
+            except Exception as e:
+                logger.error(f"학습 브리프 생성 실패: {e}")
+
         blog_url = None
         if ENABLE_BLOG:
             try:
@@ -233,6 +250,7 @@ async def main():
                     keywords=keywords,
                     headline=headline,
                     spotlight=spotlight,
+                    has_study=study_md_written,
                 )
                 if blog_url:
                     logger.info(f"블로그 publish 완료: {blog_url}")

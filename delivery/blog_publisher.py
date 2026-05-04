@@ -65,6 +65,7 @@ class BlogPublisher:
         keywords: list[str] | None = None,
         headline: str | None = None,
         spotlight: dict | None = None,
+        has_study: bool = False,
     ) -> str | None:
         if not self.blog_repo.is_dir():
             logger.error(f"블로그 레포를 찾을 수 없습니다: {self.blog_repo}")
@@ -97,9 +98,23 @@ class BlogPublisher:
             text = _strip_existing_frontmatter(text)
             combined_body = text.strip()
 
+        # 학습 브리프 입력
+        study_src = src / "study.md"
+        study_body = ""
+        if has_study and study_src.exists():
+            study_body = study_src.read_text(encoding="utf-8").strip()
+
         sections = []
         if summary_body:
             sections.append(summary_body)
+        # 포스트 상단에 학습 브리프 진입 배너
+        if study_body:
+            sections.append(
+                "{{< callout emoji=\"📚\" >}}\n"
+                "**오늘의 학습 — Spotlight 자료 한 건을 한국어로 정리** "
+                "→ [학습 브리프 열기](study)\n"
+                "{{< /callout >}}"
+            )
         if combined_body:
             sections.append(combined_body)
         sections.append("---\n\n📂 [원본 수집 데이터 펼쳐보기](raw)")
@@ -163,8 +178,34 @@ class BlogPublisher:
             )
             (target / "raw.md").write_text(raw_md, encoding="utf-8")
 
+        # 2.5) 학습 브리프 — Spotlight 자료 1건 한국어 정리
+        study_url_path: str | None = None
+        if study_body:
+            sp_title = (spotlight or {}).get("title", "").strip() if isinstance(spotlight, dict) else ""
+            sp_url = (spotlight or {}).get("url", "").strip() if isinstance(spotlight, dict) else ""
+            sp_title_yaml = sp_title.replace('"', "'")
+            origin_block = (
+                f"> 원문: [{sp_title or sp_url}]({sp_url})\n\n"
+                if sp_url
+                else ""
+            )
+            study_md = (
+                "---\n"
+                f'title: "📚 오늘의 학습 — {sp_title_yaml or display_date}"\n'
+                f"date: {display_date}\n"
+                "---\n\n"
+                + origin_block
+                + study_body
+                + "\n"
+            )
+            (target / "study.md").write_text(study_md, encoding="utf-8")
+            study_url_path = f"posts/{date_str}/study/"
+
         # 3) 홈 (content/_index.md) = 최신 summary + 아카이브 안내
-        self._update_home(date_str, display_date, combined_body, headline, spotlight, clean_tags)
+        self._update_home(
+            date_str, display_date, combined_body, headline, spotlight, clean_tags,
+            study_url_path=study_url_path,
+        )
 
         if not self._git_commit_and_push(date_str):
             return None
@@ -179,6 +220,7 @@ class BlogPublisher:
         headline: str | None = None,
         spotlight: dict | None = None,
         keywords: list[str] | None = None,
+        study_url_path: str | None = None,
     ) -> None:
         """홈 _index.md 작성. body_text는 combined_insights 본문(요약 callout 중복 회피)."""
         # ─ Hero ────────────────────────────────────────────────────────────
@@ -188,15 +230,28 @@ class BlogPublisher:
         # HTML escape 최소만 — 본문 큐레이션은 Claude가 만들어 신뢰 가능 텍스트.
         headline_html = headline_text.replace("&", "&amp;").replace("<", "&lt;")
 
+        # 보조 CTA — 학습 브리프가 있을 때만 노출
+        secondary_cta = (
+            f'    <a class="ai-cta ai-cta-secondary" href="{study_url_path}">\n'
+            '      <span class="ai-cta-label">📚 오늘의 학습</span>\n'
+            '      <span class="ai-cta-arrow" aria-hidden="true">→</span>\n'
+            "    </a>\n"
+            if study_url_path
+            else ""
+        )
+
         hero_html = (
             '<section class="ai-home-hero">\n'
             '  <p class="ai-eyebrow">AI NEWS · WEEKLY DIGEST</p>\n'
             f'  <h1 class="ai-headline">{headline_html}</h1>\n'
             f'  <p class="ai-meta">{display_date} · 매주 월요일 자동 발행</p>\n'
-            f'  <a class="ai-cta" href="posts/{date_str}/">\n'
-            '    <span class="ai-cta-label">최신 호 전체 보기</span>\n'
-            '    <span class="ai-cta-arrow" aria-hidden="true">→</span>\n'
-            "  </a>\n"
+            '  <div class="ai-cta-row">\n'
+            f'    <a class="ai-cta" href="posts/{date_str}/">\n'
+            '      <span class="ai-cta-label">최신 호 전체 보기</span>\n'
+            '      <span class="ai-cta-arrow" aria-hidden="true">→</span>\n'
+            "    </a>\n"
+            + secondary_cta
+            + "  </div>\n"
             "</section>\n\n"
         )
 
