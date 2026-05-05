@@ -2,7 +2,7 @@
 
 LLM/크롤 없이 publisher 템플릿·블로그 CSS·Hugo 설정 변경을
 빠르게 적용하기 위한 가벼운 진입점.
-weekly.yml 스냅샷이 reports-cache 브랜치에 올려둔 데이터를 기반으로 한다.
+daily.yml 스냅샷이 reports-cache 브랜치에 올려둔 데이터를 기반으로 한다.
 """
 
 from __future__ import annotations

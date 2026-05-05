@@ -1,6 +1,6 @@
 """축적된 학습 노트 카테고리를 LLM으로 재분류하는 curation 루프.
 
-매주 weekly.yml 직후 자동 실행되어:
+매일 daily.yml 직후 자동 실행되어:
 1. content/knowledge/*.md 의 frontmatter + 본문 일부를 읽음
 2. CATEGORY_VOCABULARY 8개 중 1~2개를 Sonnet에 골라달라고 요청
 3. 기존 categories와 다르면 frontmatter 업데이트

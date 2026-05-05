@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
-      group: weekly-ai-news    # 동일 그룹 → curate.yml과 직렬
+      group: daily-ai-news    # 동일 그룹 → curate.yml과 직렬
       cancel-in-progress: false
     steps:
       - name: Checkout agent

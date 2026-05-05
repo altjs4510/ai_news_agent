@@ -1,9 +1,9 @@
-name: Weekly AI News Digest
+name: Daily AI News Digest
 
 on:
   schedule:
-    # 일요일 21:00 UTC = 월요일 06:00 KST
-    - cron: "0 21 * * 0"
+    # 매일 21:00 UTC = 매일 06:00 KST
+    - cron: "0 21 * * *"
   workflow_dispatch:  # 수동 트리거 허용
 
 permissions:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     concurrency:
-      group: weekly-ai-news
+      group: daily-ai-news
       cancel-in-progress: false
     steps:
       - name: Checkout agent

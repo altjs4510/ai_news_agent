@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     concurrency:
-      group: weekly-ai-news    # weekly.yml과 동일 그룹 → 충돌 방지
+      group: daily-ai-news    # daily.yml과 동일 그룹 → 충돌 방지
       cancel-in-progress: false
     steps:
       - name: Checkout agent (main)
@@ -43,7 +43,7 @@ jobs:
       - name: Stage reports/ from snapshot
         run: |
           if [ ! -d "snapshot/reports" ]; then
-            echo "::error::snapshot/reports 디렉토리가 없습니다. weekly.yml이 한 번 이상 성공적으로 실행됐는지 확인하세요."
+            echo "::error::snapshot/reports 디렉토리가 없습니다. daily.yml이 한 번 이상 성공적으로 실행됐는지 확인하세요."
             exit 1
           fi
           rm -rf reports

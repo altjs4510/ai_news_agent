@@ -1,11 +1,11 @@
 name: AI News 품질 모니터 (quality-monitor)
 
-# weekly.yml 성공 직후 자동 실행 + 수동 트리거.
+# daily.yml 성공 직후 자동 실행 + 수동 트리거.
 # 이상 감지 시 Slack 알림.
 
 on:
   workflow_run:
-    workflows: ["Weekly AI News Digest"]
+    workflows: ["Daily AI News Digest"]
     types: [completed]
   workflow_dispatch:
     inputs:
