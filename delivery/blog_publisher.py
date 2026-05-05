@@ -76,11 +76,15 @@ class BlogPublisher:
     def _detail_hero_html(kind: str, display_date: str, meta: str, title: str) -> str:
         """상세 페이지 hero — 홈 hero와 같은 결.
         kind 텍스트는 섹션 인덱스로 돌아가는 클릭 가능한 백링크가 된다."""
+        # h2 (not h1) — Hextra single layout already emits an <h1> from
+        # frontmatter title; keeping this as h2 ensures exactly one h1 in
+        # the document outline. CSS hides Hextra's auto h1 visually and
+        # styles .ai-post-title to look like an h1.
         t = (title or "").strip().replace("&", "&amp;").replace("<", "&lt;")
         return (
             '<header class="ai-post-hero">\n'
             f'  <p class="ai-eyebrow"><a class="ai-back" href="../">{kind}</a> · {display_date} · {meta}</p>\n'
-            f'  <h1 class="ai-post-title">{t}</h1>\n'
+            f'  <h2 class="ai-post-title">{t}</h2>\n'
             "</header>\n\n"
         )
 
@@ -440,7 +444,11 @@ class BlogPublisher:
                 f'title: "{post_h1}"\n'
                 f"date: {display_date}\n"
                 "toc: true\n"
-                "customHero: true\n"
+                # _index.md는 기본적으로 kind=section → blog/list.html 적용,
+                # 그 layout은 toc partial을 호출하지 않아 우측 sticky TOC가 사라진다.
+                # layout: single을 명시해 blog/single.html (toc partial 호출, 본문 prose 렌더)
+                # 으로 강제 매칭한다.
+                'layout: single\n'
                 + tags_yaml
                 + cats_yaml
                 + "---\n\n"
@@ -453,7 +461,11 @@ class BlogPublisher:
                 f'title: "{post_h1}"\n'
                 f"date: {display_date}\n"
                 "toc: true\n"
-                "customHero: true\n"
+                # _index.md는 기본적으로 kind=section → blog/list.html 적용,
+                # 그 layout은 toc partial을 호출하지 않아 우측 sticky TOC가 사라진다.
+                # layout: single을 명시해 blog/single.html (toc partial 호출, 본문 prose 렌더)
+                # 으로 강제 매칭한다.
+                'layout: single\n'
                 + tags_yaml
                 + cats_yaml
                 + "---\n\n"
