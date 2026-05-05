@@ -6,13 +6,16 @@ AI 동향을 다양한 소스에서 자동 수집·번역·요약·인사이트�
 
 ## 주요 기능
 
-- **다중 소스 크롤링**: AITimes, Reddit, YouTube 등 다양한 소스에서 AI 관련 뉴스를 수집
-- **번역 및 요약**: 영어 콘텐츠를 한글로 번역하고, 핵심 내용 요약
-- **인사이트 추출**: Reddit 포스트에서 주제별로 실용적인 인사이트 추출
+- **다중 소스 크롤링**: 공식 AI 블로그(Anthropic·OpenAI·Google), Reddit, GitHub Trending, Hacker News, arxiv, Bluesky 등에서 자동 수집
+- **번역 및 요약**: 영어 콘텐츠를 한글로 번역하고 핵심 내용 요약
+- **2-tier 발행 모드**:
+  - **Daily** (화~일 23:30 KST): 24h raw → spotlight 1개 + 학습 노트 1편을 `/knowledge/YYYYMMDD/`에 발행
+  - **Weekly** (월요일 06:00 KST): 지난주 월~일 7일치 → 헤드라인+전체요약+spotlight+picks를 `/posts/YYYYMMDD/`에 발행
+- **자동 URL 검증**: LLM이 생성한 spotlight/additional_picks URL을 HEAD 요청으로 사전 검증 (404 제거)
 - **자동 키워드 생성**: 수집된 콘텐츠에서 중요 키워드 추출
-- **블로그 자동 발행**: 결과 마크다운을 별도 블로그 레포에 commit·push → GitHub Actions가 Quartz로 빌드해 Pages에 배포
+- **블로그 자동 발행**: 결과 마크다운을 별도 ai_news_blog 레포에 commit·push → GitHub Actions가 Hugo로 빌드해 Pages에 배포
 - **Notion / 이메일 알림**: 옵션으로 활성화 가능 (`main.py`의 `ENABLE_NOTION`, `ENABLE_EMAIL`)
-- **스케줄링**: cron 또는 launchd를 통한 정기적인 자동 실행
+- **스케줄링**: launchd plist 2개 (daily / weekly) 분리 실행
 
 ## 디렉토리 구조
 
@@ -99,55 +102,47 @@ cd ai_news_agent
 
 ### 수동 실행
 ```bash
-uv run main.py
+# daily 모드 (24h, 1 pick)
+uv run main.py --mode daily
+
+# weekly 모드 (지난 7일, 전체 요약)
+uv run main.py --mode weekly
+
+# 또는 wrapper 스크립트
+./run_ai_news.sh daily
+./run_ai_news.sh weekly
 ```
 
-### 자동 스케줄링 설정
-매주 월요일 오전 6시에 자동으로 실행되도록 설정할 수 있습니다:
+### 자동 스케줄링 (launchd)
 
-방법 1. 스케줄러 설치:
+화~일 23:30 daily + 월요일 06:00 weekly 두 plist를 별도로 등록.
+
 ```bash
-./setup_scheduler.sh install
+# plist를 LaunchAgents 디렉토리로 복사
+cp com.ai-news.daily.plist ~/Library/LaunchAgents/
+cp com.ai-news.weekly.plist ~/Library/LaunchAgents/
+
+# 등록
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ai-news.daily.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ai-news.weekly.plist
+
+# 즉시 실행 (테스트)
+launchctl kickstart -k gui/$(id -u)/com.ai-news.daily
+launchctl kickstart -k gui/$(id -u)/com.ai-news.weekly
+
+# 해제
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.ai-news.daily.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.ai-news.weekly.plist
 ```
-
-방법 2. 수동 설정
-(1) Cron 사용
-```bash
-chmod +x run_ai_news.sh
-crontab ai_news_cron
-```
-
-현재 설정된 cron 작업 확인:
-```bash
-crontab -l
-```
-
-(2) launchd 사용
-1. ~/Library/LaunchAgents/com.ai-news.plist 생성
-(예시 plist 파일은 ./com.ai-news.plist 참고)
-
-2. 설치:
-```bash
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ai-news.plist
-```
-
-3. 강제로 즉시 실행 (테스트용):
-```bash
-launchctl kickstart -k gui/$(id -u)/com.ai-news
-```
-
-4. 해제:
-```bash
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.ai-news.plist
-
-```
-
 
 ## 결과 확인
 
-- **블로그**: https://altjs4510.github.io/ai_news_blog/posts/YYYYMMDD/
-- **로그**: `logs/` 디렉토리에서 실행 로그 확인
-- **보고서**: `reports/날짜/` 디렉토리에서 생성된 마크다운 파일 확인
+- **홈**: https://altjs4510.github.io/ai_news_blog/ — 좌측 main(weekly digest) + 우측 aside(this week / last week daily picks)
+- **주간**: https://altjs4510.github.io/ai_news_blog/posts/YYYYMMDD/
+- **일간 (학습 노트)**: https://altjs4510.github.io/ai_news_blog/knowledge/YYYYMMDD/
+- **로그**: `logs/scheduled_run_{daily,weekly}_*.log`
+- **보고서**: `reports/YYYYMMDD/` 에서 생성된 raw 데이터 + meta.json
+- **상태**: `state/home_state.json` (weekly + daily_picks 누적)
 
 ## 문제 해결
 

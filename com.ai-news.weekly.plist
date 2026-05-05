@@ -3,30 +3,31 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.ai-news</string>
+    <string>com.ai-news.weekly</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>/Users/cookie/Desktop/personal-workspace/ai_news_agent/run_ai_news.sh</string>
+        <string>/Users/ac1158/personal-workspace/ai_news_agent/run_ai_news.sh weekly</string>
     </array>
+    <!-- 매주 월요일 06:00 KST 실행 — 지난주(월~일) 종합 -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Weekday</key>
-        <integer>1</integer> <!-- 월요일 -->
+        <integer>1</integer>
         <key>Hour</key>
         <integer>6</integer>
         <key>Minute</key>
         <integer>0</integer>
     </dict>
     <key>StandardErrorPath</key>
-    <string>/Users/cookie/Desktop/personal-workspace/ai_news_agent/logs/launchd.error.log</string>
+    <string>/Users/ac1158/personal-workspace/ai_news_agent/logs/launchd.weekly.error.log</string>
     <key>StandardOutPath</key>
-    <string>/Users/cookie/Desktop/personal-workspace/ai_news_agent/logs/launchd.out.log</string>
+    <string>/Users/ac1158/personal-workspace/ai_news_agent/logs/launchd.weekly.out.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/cookie/.local/bin</string>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/ac1158/.local/bin</string>
     </dict>
 </dict>
 </plist>

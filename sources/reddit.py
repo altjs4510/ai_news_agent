@@ -10,13 +10,13 @@ from utils.logger import setup_logger
 logger = setup_logger('reddit')
 
 class RedditCollector:
-    def __init__(self):
+    def __init__(self, days: int = 1):
         self.reddit = praw.Reddit(
             client_id=REDDIT_CLIENT_ID,
             client_secret=REDDIT_CLIENT_SECRET,
             user_agent=REDDIT_USER_AGENT
         )
-        self.since = datetime.utcnow() - timedelta(days=7)  # 지난 7일 기준
+        self.since = datetime.utcnow() - timedelta(days=days)
         logger.info("RedditCollector 초기화 완료")
 
     async def fetch_posts(self):

@@ -20,9 +20,8 @@ class MarkdownWriter:
         base_dir.mkdir(parents=True, exist_ok=True)
         return base_dir
 
-    def save_raw_contents(self, aitimes_posts, youtube_posts, reddit_posts, github_repos=None, ai_blog_posts=None, news_feed_posts=None, research_feed_posts=None, bluesky_posts=None):
+    def save_raw_contents(self, youtube_posts, reddit_posts, github_repos=None, ai_blog_posts=None, news_feed_posts=None, research_feed_posts=None, bluesky_posts=None):
         """수집된 원본 데이터를 마크다운 형식으로 저장합니다."""
-        aitimes_file = self._save_table_contents(aitimes_posts, "aitimes")
         youtube_file = self._save_table_contents(youtube_posts, "youtube")
         reddit_files = self._save_reddit_contents(reddit_posts)
         github_file = self._save_github_contents(github_repos or [])
@@ -30,7 +29,7 @@ class MarkdownWriter:
         news_file = self._save_table_contents(news_feed_posts or [], "news")
         research_file = self._save_table_contents(research_feed_posts or [], "research")
         bluesky_file = self._save_bluesky_contents(bluesky_posts or [])
-        return aitimes_file, youtube_file, reddit_files, github_file, ai_blogs_file, news_file, research_file, bluesky_file
+        return youtube_file, reddit_files, github_file, ai_blogs_file, news_file, research_file, bluesky_file
 
     def _save_bluesky_contents(self, posts):
         """Bluesky 게시물을 본문 + 인게이지먼트 표로 저장."""

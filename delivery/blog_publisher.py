@@ -1,14 +1,18 @@
+import json
 import os
 import re
 import shutil
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote as _urlquote
+from zoneinfo import ZoneInfo
 
 from utils.logger import setup_logger
 
 logger = setup_logger('blog_publisher')
+
+KST = ZoneInfo("Asia/Seoul")
 
 RAW_SOURCES = [
     ("AI 블로그 (공식·엔지니어링·에이전트·큐레이션)", "ai_blogs_raw.md"),
@@ -18,7 +22,6 @@ RAW_SOURCES = [
     ("arxiv · HuggingFace Papers (학술/연구)", "research_raw.md"),
     ("Reddit 원문 목록", "reddit_raw.md"),
     ("Reddit 번역본 (전문)", "reddit_translated.md"),
-    ("AI Times", "aitimes_raw.md"),
     ("YouTube", "youtube_raw.md"),
 ]
 
@@ -85,6 +88,32 @@ class BlogPublisher:
         self.site_url = os.getenv(
             "BLOG_SITE_URL", "https://altjs4510.github.io/ai_news_blog"
         ).rstrip("/")
+        # daily / weekly 양 mode 사이의 home 상태 공유 파일.
+        # ai_news_agent 디렉토리에 두어 블로그 레포 reset에 영향 받지 않도록.
+        agent_root = Path(__file__).resolve().parent.parent
+        self.state_dir = agent_root / "state"
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.state_path = self.state_dir / "home_state.json"
+
+    def _load_state(self) -> dict:
+        if not self.state_path.exists():
+            return {"weekly": None, "daily_picks": []}
+        try:
+            with open(self.state_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            state.setdefault("weekly", None)
+            state.setdefault("daily_picks", [])
+            return state
+        except Exception as e:
+            logger.warning(f"home_state.json 읽기 실패: {e} — 새로 생성")
+            return {"weekly": None, "daily_picks": []}
+
+    def _save_state(self, state: dict) -> None:
+        try:
+            with open(self.state_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"home_state.json 저장 실패: {e}")
 
     @staticmethod
     def _detail_hero_html(
@@ -363,7 +392,7 @@ class BlogPublisher:
         # main 그리드에서 사이드바와 카드가 함께 보이도록 .content는 display:contents로 흐려짐.
         (knowledge_dir / "_index.md").write_text(base + "\n" + sidebar_html + "\n", encoding="utf-8")
 
-    def publish(
+    def publish_weekly(
         self,
         report_dir: str,
         date_str: str,
@@ -375,6 +404,11 @@ class BlogPublisher:
         categories: list[str] | None = None,
         has_study: bool = False,
     ) -> str | None:
+        """주간 모드 publish — posts/{date}/_index.md + raw.md 생성, 홈 hero 갱신.
+
+        knowledge note는 만들지 않음 (daily 픽이 매일 그 역할을 함).
+        has_study는 호환 인자로 유지하지만 weekly에서는 사용하지 않음.
+        """
         if not self.blog_repo.is_dir():
             logger.error(f"블로그 레포를 찾을 수 없습니다: {self.blog_repo}")
             return None
@@ -405,16 +439,10 @@ class BlogPublisher:
             text = _strip_existing_frontmatter(text)
             combined_body = text.strip()
 
-        # 학습 브리프 — 별도 /knowledge/<date>/에 발행. 홈/포스트 hero의 보조 CTA로 링크.
-        study_src = src / "study.md"
+        # weekly 모드는 knowledge note를 만들지 않음 — daily 픽이 그 역할을 함.
+        # 호환 인자 has_study는 무시.
         study_body = ""
-        if has_study and study_src.exists():
-            study_body = study_src.read_text(encoding="utf-8").strip()
-        # study_url_path는 knowledge 페이지가 실제 발행될 때만 set — 홈/포스트의 보조 CTA를
-        # 미리 가리킬 수 있도록 study_body 존재로 선판단.
-        study_url_path: str | None = (
-            f"knowledge/{date_str}/" if study_body else None
-        )
+        study_url_path: str | None = None
 
         # 키워드를 Hugo taxonomy(tags)에 노출 → /tags/<keyword>/ 자동 생성
         # 백틱(`...`)이 붙은 키워드는 벗기고, 양옆 공백 정리
@@ -453,7 +481,7 @@ class BlogPublisher:
         # 가 자연스럽게 목록(/posts/)으로 돌아가는 진입점이 된다. 홈은 자기 hero
         # (ai-home-hero) 그대로 유지.
         post_hero = self._detail_hero_html(
-            "POSTS", display_date, "일간 요약", post_h1, deck=deck
+            "POSTS", display_date, "주간 요약", post_h1, deck=deck
         )
         home_body_for_post = self._build_home_body(
             date_str=date_str,
@@ -540,97 +568,164 @@ class BlogPublisher:
             )
             (target / "raw.md").write_text(raw_md, encoding="utf-8")
 
-        # 2.5) 학습 브리프 — 별도 'knowledge' 섹션에 누적 (블로그형 아카이브).
-        # posts/<date>/study/ 자식 페이지가 아니라 /knowledge/<date>/ 독립 글로 발행.
-        # study_url_path는 publish 상단에서 study_body 존재로 미리 set됨.
-        if study_body:
-            sp_title = (spotlight or {}).get("title", "").strip() if isinstance(spotlight, dict) else ""
-            sp_url = (spotlight or {}).get("url", "").strip() if isinstance(spotlight, dict) else ""
-            sp_title_yaml = sp_title.replace('"', "'")
-
-            # _ensure_blog_section()이 publish 시작부에서 이미 _index.md 작성 완료.
-            knowledge_dir = self.blog_repo / "content" / "knowledge"
-
-            # 본문 상단 — 원문 + 출처 호 백링크.
-            # 두 줄을 같은 인용 블록 안에서 단락 분리되게 ">" 빈 줄을 사이에 둠.
-            # (단순 "\n"으로 잇기만 하면 markdown이 한 단락으로 합쳐 한 줄로 렌더됨)
-            origin_block_parts = []
-            if sp_url:
-                origin_block_parts.append(f"> 원문: [{sp_title or sp_url}]({sp_url})")
-            origin_block_parts.append(
-                f"> ↩ 출처 호: [{display_date} AI 동향 요약]"
-                f"({{{{< relref \"posts/{date_str}\" >}}}})"
-            )
-            origin_block = "\n>\n".join(origin_block_parts) + "\n\n"
-
-            tags_yaml_k = ""
-            if clean_tags:
-                quoted = ", ".join(f'"{t}"' for t in clean_tags)
-                tags_yaml_k = f"tags: [{quoted}]\n"
-
-            cats_yaml_k = ""
-            if categories:
-                quoted = ", ".join(f'"{c}"' for c in categories)
-                cats_yaml_k = f"categories: [{quoted}]\n"
-
-            # 상세 페이지 hero — 홈/포스트와 같은 결.
-            knowledge_h1 = sp_title or display_date
-            knowledge_hero = self._detail_hero_html(
-                "KNOWLEDGE", display_date, "학습 노트", knowledge_h1
-            )
-
-            # ▶ 새 entry를 디렉토리에 먼저 (빈 placeholder로) 두면 스캔 시 자기 자신도 포함.
-            placeholder = (
-                "---\n"
-                f'title: "{sp_title_yaml or display_date}"\n'
-                f"date: {display_date}\n"
-                + tags_yaml_k
-                + cats_yaml_k
-                + "---\n"
-            )
-            (knowledge_dir / f"{date_str}.md").write_text(placeholder, encoding="utf-8")
-
-            sidebar_html = self._build_knowledge_sidebar_html(current_date_str=date_str)
-
-            # 본문을 shell로 감싸 좌측 카테고리 트리 + 우측 article 레이아웃 구성.
-            # goldmark는 raw HTML 블록 안의 markdown을 처리하지 않으므로
-            # 태그 주변에 빈 줄을 두어 markdown 모드를 다시 활성화한다.
-            knowledge_md = (
-                "---\n"
-                f'title: "{sp_title_yaml or display_date}"\n'
-                f"date: {display_date}\n"
-                + (f'source_url: "{sp_url}"\n' if sp_url else "")
-                + tags_yaml_k
-                + cats_yaml_k
-                + "---\n\n"
-                '<div class="ai-knowledge-shell">\n\n'
-                + sidebar_html
-                + "\n\n"
-                '<article class="ai-knowledge-article">\n\n'
-                + knowledge_hero
-                + origin_block
-                + study_body
-                + "\n\n"
-                "</article>\n\n"
-                "</div>\n"
-            )
-            (knowledge_dir / f"{date_str}.md").write_text(knowledge_md, encoding="utf-8")
-
-            # /knowledge/ 인덱스 상단 카테고리 칩 strip 갱신 (누적 태그 집계)
-            self._refresh_knowledge_index()
-
-        # 3) 홈 (content/_index.md) = 최신 summary + 아카이브 안내
-        self._update_home(
-            date_str, display_date, combined_body, headline, spotlight, clean_tags,
-            study_url_path=study_url_path,
-            additional_picks=additional_picks,
-            deck=deck,
-        )
+        # 3) state.weekly 갱신 후 홈 렌더 (state 기반 — daily picks aside 보존)
+        state = self._load_state()
+        state["weekly"] = {
+            "date_str": date_str,
+            "display_date": display_date,
+            "headline": headline or "",
+            "deck": deck or "",
+            "spotlight": spotlight or {},
+            "additional_picks": additional_picks or [],
+            "keywords": list(clean_tags),
+            "categories": list(categories or []),
+            "body": combined_body or "",
+        }
+        self._save_state(state)
+        self._render_home_from_state(state)
 
         if not self._git_commit_and_push(date_str):
             return None
 
         return f"{self.site_url}/posts/{date_str}/"
+
+    def publish_daily(
+        self,
+        report_dir: str,
+        date_str: str,
+        spotlight: dict | None = None,
+        categories: list[str] | None = None,
+        keywords: list[str] | None = None,
+        has_study: bool = False,
+    ) -> str | None:
+        """일간 모드 publish — knowledge/{date}.md 1편 + 홈 우측 aside 갱신.
+
+        posts/ 디렉토리는 건드리지 않음 (주간 모드 전용).
+        """
+        if not self.blog_repo.is_dir():
+            logger.error(f"블로그 레포를 찾을 수 없습니다: {self.blog_repo}")
+            return None
+        if not (spotlight and isinstance(spotlight, dict) and spotlight.get("title")):
+            logger.error("daily publish 실패 — spotlight 없음")
+            return None
+
+        src = Path(report_dir)
+        if not src.is_dir():
+            logger.error(f"리포트 디렉토리가 없습니다: {report_dir}")
+            return None
+
+        self._ensure_blog_section(self.posts_dir, "Posts")
+        self._ensure_blog_section(self.blog_repo / "content" / "knowledge", "Knowledge")
+
+        display_date = datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
+
+        # 학습 브리프 본문
+        study_body = ""
+        if has_study:
+            study_src = src / "study.md"
+            if study_src.exists():
+                study_body = study_src.read_text(encoding="utf-8").strip()
+
+        # tags 정제
+        clean_tags = []
+        for k in (keywords or []):
+            if not k:
+                continue
+            t = str(k).strip().strip("`").strip()
+            if t and t not in clean_tags:
+                clean_tags.append(t)
+
+        sp_title = (spotlight.get("title") or "").strip()
+        sp_url = (spotlight.get("url") or "").strip()
+        sp_why = (spotlight.get("why") or "").strip()
+        sp_app = (spotlight.get("application") or "").strip()
+        sp_title_yaml = sp_title.replace('"', "'")
+
+        knowledge_dir = self.blog_repo / "content" / "knowledge"
+        tags_yaml_k = ""
+        if clean_tags:
+            quoted = ", ".join(f'"{t}"' for t in clean_tags)
+            tags_yaml_k = f"tags: [{quoted}]\n"
+        cats_yaml_k = ""
+        if categories:
+            quoted = ", ".join(f'"{c}"' for c in categories)
+            cats_yaml_k = f"categories: [{quoted}]\n"
+
+        knowledge_h1 = sp_title or display_date
+        knowledge_hero = self._detail_hero_html(
+            "KNOWLEDGE", display_date, "오늘의 학습", knowledge_h1
+        )
+
+        # 학습 브리프 없을 때는 spotlight의 why/application으로 최소 본문
+        if not study_body:
+            why_block = f"**왜 중요한가**\n\n{sp_why}\n\n" if sp_why else ""
+            app_block = f"**접목 →** {sp_app}\n\n" if sp_app else ""
+            study_body = (why_block + app_block).strip() or "내용 요약 생성에 실패했습니다."
+
+        origin_block = (
+            f"> 원문: [{sp_title or sp_url}]({sp_url})\n\n" if sp_url else ""
+        )
+
+        # placeholder → sidebar build → 최종 작성
+        placeholder = (
+            "---\n"
+            f'title: "{sp_title_yaml or display_date}"\n'
+            f"date: {display_date}\n"
+            + tags_yaml_k
+            + cats_yaml_k
+            + "---\n"
+        )
+        (knowledge_dir / f"{date_str}.md").write_text(placeholder, encoding="utf-8")
+
+        sidebar_html = self._build_knowledge_sidebar_html(current_date_str=date_str)
+
+        knowledge_md = (
+            "---\n"
+            f'title: "{sp_title_yaml or display_date}"\n'
+            f"date: {display_date}\n"
+            + (f'source_url: "{sp_url}"\n' if sp_url else "")
+            + tags_yaml_k
+            + cats_yaml_k
+            + "---\n\n"
+            '<div class="ai-knowledge-shell">\n\n'
+            + sidebar_html
+            + "\n\n"
+            '<article class="ai-knowledge-article">\n\n'
+            + knowledge_hero
+            + origin_block
+            + study_body
+            + "\n\n"
+            "</article>\n\n"
+            "</div>\n"
+        )
+        (knowledge_dir / f"{date_str}.md").write_text(knowledge_md, encoding="utf-8")
+        self._refresh_knowledge_index()
+
+        # state.daily_picks 갱신 (최근 21개만 보존 — 3주치)
+        state = self._load_state()
+        picks = state.get("daily_picks") or []
+        # 같은 date_str 재실행은 덮어쓰기
+        picks = [p for p in picks if p.get("date_str") != date_str]
+        picks.append({
+            "date_str": date_str,
+            "display_date": display_date,
+            "title": sp_title,
+            "url": sp_url,
+            "summary": sp_why or sp_app or "",
+            "knowledge_url": f"/knowledge/{date_str}/",
+            "categories": list(categories or []),
+        })
+        picks.sort(key=lambda p: p.get("date_str", ""), reverse=True)
+        state["daily_picks"] = picks[:21]
+        self._save_state(state)
+
+        # 홈 렌더 — 우측 aside만 갱신되고 main hero는 weekly state에서 보존
+        self._render_home_from_state(state)
+
+        if not self._git_commit_and_push(date_str):
+            return None
+
+        return f"{self.site_url}/knowledge/{date_str}/"
 
     def _build_home_body(
         self,
@@ -672,13 +767,13 @@ class BlogPublisher:
         if hero_html is None:
             hero_html = (
                 '<section class="ai-home-hero">\n'
-                '  <p class="ai-eyebrow">AI NEWS · DAILY DIGEST</p>\n'
+                '  <p class="ai-eyebrow">AI NEWS · WEEKLY DIGEST</p>\n'
                 f'  <h1 class="ai-headline">{headline_html}</h1>\n'
                 + deck_html
-                + f'  <p class="ai-meta">{display_date} · 매일 자동 발행</p>\n'
+                + f'  <p class="ai-meta">{display_date} · 주간 요약 (매주 월요일) · 일간 픽 매일 갱신</p>\n'
                 '  <div class="ai-cta-row">\n'
                 f'    <a class="ai-cta" href="{site}/posts/{date_str}/">\n'
-                '      <span class="ai-cta-label">최신 호 전체 보기</span>\n'
+                '      <span class="ai-cta-label">이번 주 전체 보기</span>\n'
                 '      <span class="ai-cta-arrow" aria-hidden="true">→</span>\n'
                 "    </a>\n"
                 + secondary_cta
@@ -735,7 +830,7 @@ class BlogPublisher:
             "arxiv · HuggingFace Papers · GitHub Trending</p>\n"
             "  </div>\n"
             '  <p class="ai-home-links">'
-            f'<a href="{site}/posts/">일간 요약</a>'
+            f'<a href="{site}/posts/">주간 요약</a>'
             '<span class="ai-dot">·</span>'
             f'<a href="{site}/knowledge/">학습 노트</a>'
             '<span class="ai-dot">·</span>'
@@ -769,8 +864,16 @@ class BlogPublisher:
         additional_picks: list[dict] | None = None,
         deck: str | None = None,
     ) -> None:
-        """홈 _index.md 작성. body_text는 combined_insights 본문(요약 callout 중복 회피)."""
-        body = self._build_home_body(
+        """홈 _index.md 작성. body_text는 combined_insights 본문(요약 callout 중복 회피).
+
+        좌측 main(weekly hero/spotlight/picks/body) + 우측 aside(daily picks 카드)를
+        grid로 묶는다. body는 _build_home_body가 hero+spotlight+...+footer 전체를
+        반환하므로 footer만 분리해 grid 밖에 둔다.
+        """
+        # _build_home_body는 hero+spotlight+additional+tags+body+footer를 모두 합쳐 반환.
+        # 우측 aside와 좌측 main을 grid로 묶기 위해 footer를 분리. 가장 마지막
+        # <footer class="ai-home-footer"> 블록을 떼어낸다.
+        full_body = self._build_home_body(
             date_str=date_str,
             display_date=display_date,
             body_text=body_text,
@@ -781,14 +884,125 @@ class BlogPublisher:
             additional_picks=additional_picks,
             deck=deck,
         )
+        footer_marker = '<footer class="ai-home-footer">'
+        if footer_marker in full_body:
+            main_html, footer_html = full_body.split(footer_marker, 1)
+            footer_html = footer_marker + footer_html
+        else:
+            main_html, footer_html = full_body, ""
+
+        aside_html = self._build_daily_picks_aside_html()
+        grid_html = (
+            '<div class="ai-home-grid">\n\n'
+            + '<div class="ai-home-main">\n\n'
+            + main_html
+            + '</div>\n\n'
+            + aside_html
+            + '</div>\n\n'
+        )
+
         page = (
             "---\n"
             'title: "AI News Digest"\n'
             "toc: false\n"
             "---\n\n"
-            + body
+            + grid_html
+            + footer_html
         )
         (self.blog_repo / "content" / "_index.md").write_text(page, encoding="utf-8")
+
+    def _build_daily_picks_aside_html(self) -> str:
+        """홈 우측 aside — THIS WEEK (so far) + LAST WEEK 카드 리스트.
+
+        state.daily_picks(최신순)에서 ISO 주차 기준 분리.
+        """
+        state = self._load_state()
+        picks = state.get("daily_picks") or []
+        if not picks:
+            return ""
+
+        today = datetime.now(KST).date()
+        monday_this = today - timedelta(days=today.weekday())
+        monday_last = monday_this - timedelta(days=7)
+
+        this_week, last_week = [], []
+        for p in picks:
+            try:
+                d = datetime.strptime(p["date_str"], "%Y%m%d").date()
+            except (ValueError, KeyError, TypeError):
+                continue
+            if d >= monday_this:
+                this_week.append(p)
+            elif d >= monday_last:
+                last_week.append(p)
+
+        def _card(p: dict) -> str:
+            title = (p.get("title") or "").replace("&", "&amp;").replace("<", "&lt;")
+            short = title[:60] + ("…" if len(title) > 60 else "")
+            d = p.get("date_str", "")
+            display = f"{d[:4]}-{d[4:6]}-{d[6:]}" if len(d) == 8 else d
+            knowledge_url = p.get("knowledge_url") or f"/knowledge/{d}/"
+            href = f"{self.site_url}{knowledge_url}"
+            return (
+                '<li class="ai-pick-item">\n'
+                f'  <a href="{href}">\n'
+                f'    <span class="ai-pick-date">{display}</span>\n'
+                f'    <span class="ai-pick-title-mini">{short}</span>\n'
+                "  </a>\n"
+                "</li>"
+            )
+
+        sections = []
+        if this_week:
+            sections.append(
+                '  <section class="ai-week-block">\n'
+                '    <p class="ai-eyebrow">THIS WEEK</p>\n'
+                '    <ul class="ai-pick-mini-list">\n      '
+                + "\n      ".join(_card(p) for p in this_week)
+                + "\n    </ul>\n"
+                "  </section>"
+            )
+        if last_week:
+            sections.append(
+                '  <section class="ai-week-block">\n'
+                '    <p class="ai-eyebrow">LAST WEEK</p>\n'
+                '    <ul class="ai-pick-mini-list">\n      '
+                + "\n      ".join(_card(p) for p in last_week)
+                + "\n    </ul>\n"
+                "  </section>"
+            )
+
+        if not sections:
+            return ""
+
+        return (
+            '<aside class="ai-home-aside">\n'
+            + "\n".join(sections)
+            + "\n</aside>\n\n"
+        )
+
+    def _render_home_from_state(self, state: dict) -> None:
+        """home_state.json을 기반으로 홈 _index.md 렌더.
+
+        state["weekly"]가 있으면 그 데이터로 main 컬럼을 그리고,
+        없으면 (첫 daily 발행 직후 등) 헤드라인만 fallback으로 표시.
+        """
+        weekly = state.get("weekly") or {}
+        date_str = weekly.get("date_str", datetime.now(KST).strftime("%Y%m%d"))
+        display_date = weekly.get(
+            "display_date",
+            datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d"),
+        )
+        self._update_home(
+            date_str,
+            display_date,
+            weekly.get("body", ""),
+            headline=weekly.get("headline") or None,
+            spotlight=weekly.get("spotlight") or None,
+            keywords=weekly.get("keywords") or [],
+            additional_picks=weekly.get("additional_picks") or [],
+            deck=weekly.get("deck") or None,
+        )
 
     def _git_commit_and_push(self, date_str: str) -> bool:
         """블로그 레포에 commit 후 push. push race가 흔해서 rebase 재시도 포함."""

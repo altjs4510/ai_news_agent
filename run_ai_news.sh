@@ -1,19 +1,25 @@
 #!/bin/bash
 
 # AI News Agent 실행 스크립트
-# 작성일: $(date '+%Y-%m-%d')
+# 사용: ./run_ai_news.sh [daily|weekly]   (기본: daily)
+
+MODE="${1:-daily}"
+if [[ "$MODE" != "daily" && "$MODE" != "weekly" ]]; then
+    echo "오류: mode는 daily 또는 weekly여야 합니다. (입력: $MODE)" >&2
+    exit 2
+fi
 
 # 스크립트 디렉토리로 이동
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd "$SCRIPT_DIR"
 
 # 로그 파일 설정
-LOG_FILE="logs/scheduled_run_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="logs/scheduled_run_${MODE}_$(date +%Y%m%d_%H%M%S).log"
 
 # 로그 디렉토리 생성
 mkdir -p logs
 
-echo "=== AI News Agent 시작 ===" | tee -a "$LOG_FILE"
+echo "=== AI News Agent 시작 (mode=${MODE}) ===" | tee -a "$LOG_FILE"
 echo "시작 시간: $(date)" | tee -a "$LOG_FILE"
 echo "작업 디렉토리: $SCRIPT_DIR" | tee -a "$LOG_FILE"
 
@@ -31,13 +37,13 @@ if [ ! -f ".env" ]; then
 fi
 
 # 메인 스크립트 실행
-echo "AI News Agent 실행 중..." | tee -a "$LOG_FILE"
+echo "AI News Agent 실행 중 (mode=${MODE})..." | tee -a "$LOG_FILE"
 if command -v uv &> /dev/null; then
     echo "uv run으로 실행..." | tee -a "$LOG_FILE"
-    uv run main.py >> "$LOG_FILE" 2>&1
+    uv run main.py --mode "$MODE" >> "$LOG_FILE" 2>&1
 else
     echo "Python으로 직접 실행..." | tee -a "$LOG_FILE"
-    python main.py >> "$LOG_FILE" 2>&1
+    python main.py --mode "$MODE" >> "$LOG_FILE" 2>&1
 fi
 
 # 실행 결과 확인

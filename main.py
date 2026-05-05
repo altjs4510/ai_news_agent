@@ -1,6 +1,7 @@
+import argparse
 import asyncio
 import os
-from sources.aitimes import AITimesCrawler
+import aiohttp
 from sources.youtube import YouTubeParser
 from sources.reddit import RedditCollector
 from sources.github_trending import GitHubTrendingCollector
@@ -101,13 +102,18 @@ def _write_summary_markdown(report_path: str, date_str: str, headline, spotlight
         f.write("\n".join(lines))
 
 
-async def main():
-    """메인 실행 함수"""
+async def main(mode: str = "daily"):
+    """메인 실행 함수.
+
+    mode:
+      - "daily": 24h 윈도우 → daily pick 1개 + 학습 노트. /knowledge/{date}/ 발행.
+      - "weekly": 7d(월~일) 윈도우 → 헤드라인+요약+spotlight+picks. /posts/{date}/ 발행.
+    """
     try:
-        logger.info("=== AI 뉴스 수집 시작 ===")
-        
+        logger.info(f"=== AI 뉴스 수집 시작 (mode={mode}) ===")
+        days_window = 1 if mode == "daily" else 7
+
         # 수집기 활성화 설정
-        ENABLE_AITIMES = False
         ENABLE_YOUTUBE = False
         ENABLE_REDDIT = True
         ENABLE_GITHUB_TRENDING = True
@@ -123,36 +129,34 @@ async def main():
 
         # 수집기 초기화
         collectors = []
-        if ENABLE_AITIMES:
-            aitimes = AITimesCrawler()
-            collectors.append(('aitimes', aitimes.fetch_articles()))
         if ENABLE_YOUTUBE:
             youtube = YouTubeParser()
             collectors.append(('youtube', youtube.fetch_videos()))
         if ENABLE_REDDIT:
-            reddit = RedditCollector()
+            reddit = RedditCollector(days=days_window)
             collectors.append(('reddit', reddit.fetch_posts()))
         if ENABLE_GITHUB_TRENDING:
-            github = GitHubTrendingCollector(since="weekly", limit=25)
+            gh_since = "daily" if mode == "daily" else "weekly"
+            github = GitHubTrendingCollector(since=gh_since, limit=25)
             collectors.append(('github_trending', github.fetch_repos()))
         if ENABLE_AI_BLOGS:
             # state_file: cross-run URL dedup. aihero.dev RSS처럼 pubDate가
             # 모든 아이템에 동일한 build time으로 박힌 소스 대응 — 같은 글이
             # 매 호 등장하지 않도록 한 번 본 URL은 다음 run부터 제외.
             ai_blogs = AIBlogCollector(
-                days=7,
+                days=days_window,
                 per_source_limit=15,
                 state_file="state/ai_blogs_seen.json",
             )
             collectors.append(('ai_blogs', ai_blogs.fetch_posts()))
         if ENABLE_NEWS_FEEDS:
-            news_feeds = NewsFeedCollector(days=7, per_source_limit=12)
+            news_feeds = NewsFeedCollector(days=days_window, per_source_limit=12)
             collectors.append(('news_feeds', news_feeds.fetch_posts()))
         if ENABLE_RESEARCH_FEEDS:
-            research_feeds = ResearchFeedCollector(days=7, per_source_limit=10)
+            research_feeds = ResearchFeedCollector(days=days_window, per_source_limit=10)
             collectors.append(('research_feeds', research_feeds.fetch_posts()))
         if ENABLE_BLUESKY:
-            bluesky = BlueskyCollector(handles=BLUESKY_HANDLES, days=7, per_handle_limit=8)
+            bluesky = BlueskyCollector(handles=BLUESKY_HANDLES, days=days_window, per_handle_limit=8)
             collectors.append(('bluesky', bluesky.fetch_posts()))
 
         writer = MarkdownWriter()
@@ -165,7 +169,6 @@ async def main():
             results = []
 
         # 수집 결과 처리
-        articles = []
         videos = []
         reddit_posts = []
         github_repos = []
@@ -176,9 +179,7 @@ async def main():
 
         for i, (source_name, _) in enumerate(collectors):
             result = results[i] if i < len(results) and not isinstance(results[i], Exception) else []
-            if source_name == 'aitimes':
-                articles = result
-            elif source_name == 'youtube':
+            if source_name == 'youtube':
                 videos = result
             elif source_name == 'reddit':
                 reddit_posts = result
@@ -195,8 +196,8 @@ async def main():
 
         # 마크다운 파일 저장
         markdown_writer = MarkdownWriter()
-        markdown_writer.save_raw_contents(articles, videos, reddit_posts, github_repos, ai_blog_posts, news_feed_posts, research_feed_posts, bluesky_posts)
-        
+        markdown_writer.save_raw_contents(videos, reddit_posts, github_repos, ai_blog_posts, news_feed_posts, research_feed_posts, bluesky_posts)
+
         # Reddit 포스트 관련성 평가 및 필터링
         logger.info("Reddit 포스트 관련성 평가 중...")
         relevant_posts = []
@@ -205,21 +206,20 @@ async def main():
             if await evaluate_post_relevance(post['title']):
                 relevant_posts.append(post)
         logger.info(f"관련성 높은 포스트: {len(relevant_posts)}개")
-        
+
         # Reddit 포스트 번역
         logger.info("원본 데이터 저장 중...")
-        markdown_writer.save_raw_contents(articles, videos, relevant_posts, github_repos, ai_blog_posts, news_feed_posts, research_feed_posts, bluesky_posts)
-        
+        markdown_writer.save_raw_contents(videos, relevant_posts, github_repos, ai_blog_posts, news_feed_posts, research_feed_posts, bluesky_posts)
+
         logger.info("번역 시작...")
         translated_posts = await translate_contents_batch(relevant_posts)
         markdown_writer._save_reddit_contents(translated_posts)
-        
+
         # 공통 컨텐츠 로드
         today = datetime.now(KST)
         date_str = today.strftime("%Y%m%d")
         report_path = f"reports/{date_str}"
 
-        aitimes_content = _read_or_empty(f"{report_path}/aitimes_raw.md")
         youtube_content = _read_or_empty(f"{report_path}/youtube_raw.md")
         reddit_translated_content = _read_or_empty(f"{report_path}/reddit_translated.md")
         github_content = _read_or_empty(f"{report_path}/github_raw.md")
@@ -278,8 +278,11 @@ async def main():
             if cached is None:
                 try:
                     headline, deck, spotlight, additional_picks, summary, keywords, categories = await generate_summary_and_keywords(
-                        aitimes_content, youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content
+                        youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content
                     )
+                    # LLM이 생성한 spotlight/picks URL 실제 접근 가능 여부 검증.
+                    # 404/접속 불가 URL은 비워서(""), publisher가 외부 링크 대신 텍스트만 노출.
+                    spotlight, additional_picks = await _validate_pick_urls(spotlight, additional_picks)
                 except Exception as e:
                     logger.error(f"요약/키워드 생성 실패: {e}")
                     additional_picks = []
@@ -294,9 +297,10 @@ async def main():
                 logger.error(f"summary.md 작성 실패: {e}")
 
         # Spotlight가 정해지면 그 자료 한 건을 깊이 공부할 수 있도록 학습 브리프 생성.
+        # daily 모드에서만 — weekly는 학습 노트 없이 요약/picks만.
         # 실패해도 publish 자체는 진행.
         study_md_written = False
-        if spotlight and isinstance(spotlight, dict) and spotlight.get("url"):
+        if mode == "daily" and spotlight and isinstance(spotlight, dict) and spotlight.get("url"):
             try:
                 logger.info(f"학습 브리프 생성 중: {spotlight.get('title')}")
                 brief = await generate_study_brief(spotlight)
@@ -332,17 +336,27 @@ async def main():
         if ENABLE_BLOG:
             try:
                 publisher = BlogPublisher()
-                blog_url = publisher.publish(
-                    report_path,
-                    date_str,
-                    keywords=keywords,
-                    headline=headline,
-                    deck=deck,
-                    spotlight=spotlight,
-                    additional_picks=additional_picks,
-                    categories=categories,
-                    has_study=study_md_written,
-                )
+                if mode == "daily":
+                    blog_url = publisher.publish_daily(
+                        report_path,
+                        date_str,
+                        spotlight=spotlight,
+                        categories=categories,
+                        keywords=keywords,
+                        has_study=study_md_written,
+                    )
+                else:
+                    blog_url = publisher.publish_weekly(
+                        report_path,
+                        date_str,
+                        keywords=keywords,
+                        headline=headline,
+                        deck=deck,
+                        spotlight=spotlight,
+                        additional_picks=additional_picks,
+                        categories=categories,
+                        has_study=study_md_written,
+                    )
                 if blog_url:
                     logger.info(f"블로그 publish 완료: {blog_url}")
                 else:
@@ -360,7 +374,6 @@ async def main():
                     date_str=date_str,
                     keywords=keywords or [],
                     summary=summary or [],
-                    aitimes_content=aitimes_content,
                     youtube_content=youtube_content,
                     reddit_insights=reddit_insights
                 )
@@ -681,7 +694,71 @@ CATEGORY_VOCABULARY = [
 ]
 
 
-async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit_insights, github_content="", ai_blogs_content="", bluesky_content=""):
+async def _check_url(url: str, timeout: int = 8) -> bool:
+    """URL이 실제로 접근 가능한지 HEAD 요청으로 확인. 4xx/5xx면 False."""
+    if not url or not url.startswith("http"):
+        return False
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.head(
+                url,
+                timeout=aiohttp.ClientTimeout(total=timeout),
+                allow_redirects=True,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; ai-news-agent/0.1)"},
+            ) as resp:
+                if resp.status == 405:
+                    # HEAD 불허 서버는 GET으로 재시도 (본문은 안 읽음)
+                    async with session.get(
+                        url,
+                        timeout=aiohttp.ClientTimeout(total=timeout),
+                        allow_redirects=True,
+                        headers={"User-Agent": "Mozilla/5.0 (compatible; ai-news-agent/0.1)"},
+                    ) as gresp:
+                        return gresp.status < 400
+                return resp.status < 400
+    except Exception:
+        return False
+
+
+async def _validate_pick_urls(
+    spotlight: dict | None,
+    additional_picks: list[dict],
+) -> tuple[dict | None, list[dict]]:
+    """spotlight·additional_picks URL을 병렬로 검증. 404/접속불가는 url 필드를 비움."""
+    urls_to_check: list[str] = []
+    if spotlight and spotlight.get("url"):
+        urls_to_check.append(spotlight["url"])
+    for p in additional_picks:
+        if p.get("url"):
+            urls_to_check.append(p["url"])
+
+    if not urls_to_check:
+        return spotlight, additional_picks
+
+    results = await asyncio.gather(*[_check_url(u) for u in urls_to_check], return_exceptions=True)
+    url_ok: dict[str, bool] = {}
+    for u, r in zip(urls_to_check, results):
+        ok = bool(r) if not isinstance(r, Exception) else False
+        url_ok[u] = ok
+        if not ok:
+            logger.warning(f"URL 검증 실패 (제거): {u}")
+
+    if spotlight and spotlight.get("url"):
+        if not url_ok.get(spotlight["url"], False):
+            spotlight = {**spotlight, "url": ""}
+
+    valid_picks = []
+    for p in additional_picks:
+        u = p.get("url", "")
+        if u and not url_ok.get(u, False):
+            valid_picks.append({**p, "url": ""})
+        else:
+            valid_picks.append(p)
+
+    return spotlight, valid_picks
+
+
+async def generate_summary_and_keywords(youtube_content, reddit_insights, github_content="", ai_blogs_content="", bluesky_content=""):
     """수집된 콘텐츠를 기반으로 전체 요약과 키워드를 생성합니다."""
     logger.info("요약 및 키워드 생성 시작")
 
@@ -689,7 +766,7 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
     category_vocab_block = "\n".join(f"   - {c}" for c in CATEGORY_VOCABULARY)
 
     # 요약을 위한 프롬프트 생성
-    prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, AI Times, YouTube 영상, Bluesky 버즈 자료입니다. 이를 바탕으로 아래 기준에 따라 정리해주세요.
+    prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, YouTube 영상, Bluesky 버즈 자료입니다. 이를 바탕으로 아래 기준에 따라 정리해주세요.
 
 자료의 각 항목에는 [텍스트](URL) 형태의 마크다운 링크가 포함되어 있으니, 인용할 때 그 URL을 그대로 본문에 가져다 쓰세요.
 
@@ -701,9 +778,6 @@ async def generate_summary_and_keywords(aitimes_content, youtube_content, reddit
 
 ==== GitHub Trending (이번 주) ====
 {github_content[:3000]}
-
-==== AI Times ====
-{aitimes_content[:2000]}
 
 ==== YouTube ====
 {youtube_content[:2000]}
@@ -881,4 +955,12 @@ ai_news_agent는 보조 후보입니다.
         raise e  # 예외를 다시 발생시켜서 상위에서 처리하도록 함
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="AI News Agent")
+    parser.add_argument(
+        "--mode",
+        choices=["daily", "weekly"],
+        default="daily",
+        help="발행 모드: daily(24h 1pick, 기본) | weekly(7d 전체 요약)",
+    )
+    args = parser.parse_args()
+    asyncio.run(main(mode=args.mode))
