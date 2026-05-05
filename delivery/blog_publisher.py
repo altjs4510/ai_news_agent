@@ -656,15 +656,11 @@ class BlogPublisher:
         if body:
             # hero가 이미 h1이므로 본문 마크다운 헤딩을 한 단계씩 강등 (H1 중복 방지)
             body = _demote_headings(body)
-        body_block = (
-            (
-                '<section class="ai-home-body">\n\n'
-                f"{body}\n\n"
-                "</section>\n\n"
-            )
-            if body
-            else ""
-        )
+        # 본문은 raw HTML wrapper로 감싸지 않는다 — Goldmark가 raw HTML 블록 안의
+        # markdown 헤딩을 .Fragments.Headings에 등록하지 않아 우측 sticky TOC가
+        # 비어버린다. 폭 제한은 CSS의 main:has(.ai-post-hero) > .content > * 셀렉터에서
+        # 직접 처리한다.
+        body_block = f"{body}\n\n" if body else ""
 
         footer = (
             '<footer class="ai-home-footer">\n'
