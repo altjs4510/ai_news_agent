@@ -506,6 +506,11 @@ class BlogPublisher:
                 "---\n"
                 f'title: "{display_date} 원본 수집 데이터"\n'
                 f"date: {display_date}\n"
+                # raw 페이지는 본문 footer 링크와 spotlight detail에서만 도달.
+                # /posts/ listing 및 RSS, sitemap에 노출되지 않도록 _build로 제외.
+                '_build:\n'
+                '  list: never\n'
+                '  render: always\n'
                 "---\n\n"
                 "수집된 원본 데이터를 한곳에 모았습니다. 요약은 [메인 페이지](.)에서 보실 수 있습니다.\n\n"
                 + "\n\n---\n\n".join(raw_sections)
