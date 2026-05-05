@@ -136,7 +136,14 @@ async def main():
             github = GitHubTrendingCollector(since="weekly", limit=25)
             collectors.append(('github_trending', github.fetch_repos()))
         if ENABLE_AI_BLOGS:
-            ai_blogs = AIBlogCollector(days=7, per_source_limit=15)
+            # state_file: cross-run URL dedup. aihero.dev RSS처럼 pubDate가
+            # 모든 아이템에 동일한 build time으로 박힌 소스 대응 — 같은 글이
+            # 매 호 등장하지 않도록 한 번 본 URL은 다음 run부터 제외.
+            ai_blogs = AIBlogCollector(
+                days=7,
+                per_source_limit=15,
+                state_file="state/ai_blogs_seen.json",
+            )
             collectors.append(('ai_blogs', ai_blogs.fetch_posts()))
         if ENABLE_NEWS_FEEDS:
             news_feeds = NewsFeedCollector(days=7, per_source_limit=12)

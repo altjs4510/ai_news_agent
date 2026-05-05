@@ -71,6 +71,87 @@ class BlogPublisher:
         )
 
     @staticmethod
+    def _build_spotlight_html(
+        spotlight: dict | None,
+        detail_url: str | None = None,
+    ) -> str:
+        """spotlight 카드. detail_url이 주어지면 카드 하단에 '자세히 보기 →' CTA 버튼을
+        그려서 사이트 내 상세(knowledge note)로 바로 점프할 수 있게 한다."""
+        if not (spotlight and isinstance(spotlight, dict) and spotlight.get("title")):
+            return ""
+        sp_title = (spotlight.get("title") or "").strip()
+        sp_url = (spotlight.get("url") or "").strip()
+        sp_why = (spotlight.get("why") or "").strip()
+        sp_app = (spotlight.get("application") or "").strip()
+        sp_title_html = sp_title.replace("&", "&amp;").replace("<", "&lt;")
+        sp_why_html = sp_why.replace("&", "&amp;").replace("<", "&lt;")
+        sp_app_html = sp_app.replace("&", "&amp;").replace("<", "&lt;")
+
+        title_block = (
+            f'<a class="ai-spotlight-title" href="{sp_url}" '
+            f'target="_blank" rel="noopener">{sp_title_html}<span class="ai-spotlight-arrow">↗</span></a>'
+            if sp_url
+            else f'<span class="ai-spotlight-title">{sp_title_html}</span>'
+        )
+
+        detail_cta = (
+            '  <p class="ai-spotlight-cta">'
+            f'<a class="ai-spotlight-detail" href="{detail_url}">'
+            '자세히 보기 <span class="ai-spotlight-detail-arrow" aria-hidden="true">→</span>'
+            "</a></p>\n"
+            if detail_url
+            else ""
+        )
+
+        return (
+            '<aside class="ai-spotlight">\n'
+            '  <p class="ai-eyebrow ai-spotlight-eyebrow">✦ TODAY\'S PICK</p>\n'
+            f"  {title_block}\n"
+            f'  <p class="ai-spotlight-why">{sp_why_html}</p>\n'
+            '  <p class="ai-spotlight-app">'
+            '<span class="ai-spotlight-app-label">접목 →</span> '
+            f"{sp_app_html}</p>\n"
+            + detail_cta
+            + "</aside>\n\n"
+        )
+
+    @staticmethod
+    def _build_additional_picks_html(additional_picks: list[dict] | None) -> str:
+        if not additional_picks:
+            return ""
+        cards = []
+        for pick in additional_picks:
+            p_title = (pick.get("title") or "").strip()
+            p_url = (pick.get("url") or "").strip()
+            p_summary = (pick.get("summary") or "").strip()
+            if not p_title or not p_summary:
+                continue
+            p_title_e = p_title.replace("&", "&amp;").replace("<", "&lt;")
+            p_sum_e = p_summary.replace("&", "&amp;").replace("<", "&lt;")
+            title_block = (
+                f'<a class="ai-pick-title" href="{p_url}" target="_blank" rel="noopener">'
+                f'{p_title_e}<span class="ai-pick-arrow">↗</span></a>'
+                if p_url
+                else f'<span class="ai-pick-title">{p_title_e}</span>'
+            )
+            cards.append(
+                f'<article class="ai-pick">\n'
+                f'  {title_block}\n'
+                f'  <p class="ai-pick-summary">{p_sum_e}</p>\n'
+                f'</article>'
+            )
+        if not cards:
+            return ""
+        return (
+            '<section class="ai-additional">\n'
+            '  <p class="ai-eyebrow">ALSO WORTH READING · 꼭 읽어보세요</p>\n'
+            '  <div class="ai-pick-list">\n  '
+            + "\n  ".join(cards) + "\n"
+            "  </div>\n"
+            "</section>\n\n"
+        )
+
+    @staticmethod
     def _section_index_text(title: str) -> str:
         """Hextra 'blog' 레이아웃을 cascade로 강제 — 좌측 docs sidebar 제거.
         섹션 페이지 본문은 비워둔다(h1·intro CSS hide와 짝). title은 브라우저 탭용."""
@@ -275,14 +356,7 @@ class BlogPublisher:
 
         display_date = datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
 
-        # 1) 메인 페이지 = summary 본문 + Reddit 깊이 분석
-        summary_path = src / "summary.md"
-        summary_body = ""
-        if summary_path.exists():
-            summary_body = _strip_existing_frontmatter(
-                summary_path.read_text(encoding="utf-8")
-            ).strip()
-
+        # 메인 인사이트 본문 (combined_insights) — 홈/포스트 공통 body
         combined_path = src / "combined_insights.md"
         combined_body = ""
         if combined_path.exists():
@@ -290,25 +364,16 @@ class BlogPublisher:
             text = _strip_existing_frontmatter(text)
             combined_body = text.strip()
 
-        # 학습 브리프 입력
+        # 학습 브리프 — 별도 /knowledge/<date>/에 발행. 홈/포스트 hero의 보조 CTA로 링크.
         study_src = src / "study.md"
         study_body = ""
         if has_study and study_src.exists():
             study_body = study_src.read_text(encoding="utf-8").strip()
-
-        sections = []
-        if summary_body:
-            sections.append(summary_body)
-        # 포스트 상단에 학습 노트 진입 배너 (별도 knowledge 섹션의 자식 글로 링크)
-        if study_body:
-            sections.append(
-                "{{< callout emoji=\"📚\" >}}\n"
-                f"[학습 노트 열기 →]({{{{< relref \"knowledge/{date_str}\" >}}}})\n"
-                "{{< /callout >}}"
-            )
-        if combined_body:
-            sections.append(combined_body)
-        sections.append("---\n\n📂 [원본 수집 데이터 펼쳐보기](raw)")
+        # study_url_path는 knowledge 페이지가 실제 발행될 때만 set — 홈/포스트의 보조 CTA를
+        # 미리 가리킬 수 있도록 study_body 존재로 선판단.
+        study_url_path: str | None = (
+            f"knowledge/{date_str}/" if study_body else None
+        )
 
         # 키워드를 Hugo taxonomy(tags)에 노출 → /tags/<keyword>/ 자동 생성
         # 백틱(`...`)이 붙은 키워드는 벗기고, 양옆 공백 정리
@@ -329,21 +394,42 @@ class BlogPublisher:
             quoted = ", ".join(f'"{c}"' for c in categories)
             cats_yaml = f"categories: [{quoted}]\n"
 
-        # 상세 페이지 hero — 홈 hero와 같은 톤. headline이 비어 있으면 일자 fallback.
         post_h1 = (headline or f"{display_date} AI 동향").strip()
-        post_hero = self._detail_hero_html("POSTS", display_date, "일간 요약", post_h1)
 
-        if sections:
+        # Posts 상세 페이지는 그날의 홈 컨텐츠(spotlight/추천/태그/본문/푸터)를
+        # 그대로 아카이브하되, hero만 post 전용 디자인으로 — 좌상단 ← POSTS 백링크
+        # 가 자연스럽게 목록(/posts/)으로 돌아가는 진입점이 된다. 홈은 자기 hero
+        # (ai-home-hero) 그대로 유지.
+        post_hero = self._detail_hero_html(
+            "POSTS", display_date, "일간 요약", post_h1
+        )
+        home_body_for_post = self._build_home_body(
+            date_str=date_str,
+            display_date=display_date,
+            body_text=combined_body,
+            headline=headline,
+            spotlight=spotlight,
+            keywords=clean_tags,
+            study_url_path=study_url_path,
+            additional_picks=additional_picks,
+            hero_html=post_hero,
+        )
+        raw_link_block = (
+            '\n<p class="ai-post-raw">'
+            '<a href="raw">📂 원본 수집 데이터 펼쳐보기 →</a>'
+            "</p>\n"
+        )
+
+        if combined_body:
             index_md = (
                 "---\n"
-                f'title: "{post_h1}"\n'   # frontmatter title = headline (브라우저 탭 + 카드)
+                f'title: "{post_h1}"\n'
                 f"date: {display_date}\n"
                 + tags_yaml
                 + cats_yaml
                 + "---\n\n"
-                + post_hero
-                + "\n\n---\n\n".join(sections)
-                + "\n"
+                + home_body_for_post
+                + raw_link_block
             )
         else:
             index_md = (
@@ -353,8 +439,8 @@ class BlogPublisher:
                 + tags_yaml
                 + cats_yaml
                 + "---\n\n"
-                + post_hero
-                + "이번 호는 요약 생성에 실패했습니다. 원본 수집 데이터는 [raw](raw) 페이지에서 확인할 수 있습니다.\n"
+                + home_body_for_post
+                + "\n이번 호는 요약 생성에 실패했습니다. 원본 수집 데이터는 [raw](raw) 페이지에서 확인할 수 있습니다.\n"
             )
         (target / "_index.md").write_text(index_md, encoding="utf-8")
 
@@ -384,7 +470,7 @@ class BlogPublisher:
 
         # 2.5) 학습 브리프 — 별도 'knowledge' 섹션에 누적 (블로그형 아카이브).
         # posts/<date>/study/ 자식 페이지가 아니라 /knowledge/<date>/ 독립 글로 발행.
-        study_url_path: str | None = None
+        # study_url_path는 publish 상단에서 study_body 존재로 미리 set됨.
         if study_body:
             sp_title = (spotlight or {}).get("title", "").strip() if isinstance(spotlight, dict) else ""
             sp_url = (spotlight or {}).get("url", "").strip() if isinstance(spotlight, dict) else ""
@@ -393,7 +479,9 @@ class BlogPublisher:
             # _ensure_blog_section()이 publish 시작부에서 이미 _index.md 작성 완료.
             knowledge_dir = self.blog_repo / "content" / "knowledge"
 
-            # 본문 상단 — 원문 + 출처 호 백링크
+            # 본문 상단 — 원문 + 출처 호 백링크.
+            # 두 줄을 같은 인용 블록 안에서 단락 분리되게 ">" 빈 줄을 사이에 둠.
+            # (단순 "\n"으로 잇기만 하면 markdown이 한 단락으로 합쳐 한 줄로 렌더됨)
             origin_block_parts = []
             if sp_url:
                 origin_block_parts.append(f"> 원문: [{sp_title or sp_url}]({sp_url})")
@@ -401,7 +489,7 @@ class BlogPublisher:
                 f"> ↩ 출처 호: [{display_date} AI 동향 요약]"
                 f"({{{{< relref \"posts/{date_str}\" >}}}})"
             )
-            origin_block = "\n".join(origin_block_parts) + "\n\n"
+            origin_block = "\n>\n".join(origin_block_parts) + "\n\n"
 
             tags_yaml_k = ""
             if clean_tags:
@@ -455,7 +543,6 @@ class BlogPublisher:
                 "</div>\n"
             )
             (knowledge_dir / f"{date_str}.md").write_text(knowledge_md, encoding="utf-8")
-            study_url_path = f"knowledge/{date_str}/"
 
             # /knowledge/ 인덱스 상단 카테고리 칩 strip 갱신 (누적 태그 집계)
             self._refresh_knowledge_index()
@@ -472,6 +559,115 @@ class BlogPublisher:
 
         return f"{self.site_url}/posts/{date_str}/"
 
+    def _build_home_body(
+        self,
+        date_str: str,
+        display_date: str,
+        body_text: str,
+        headline: str | None = None,
+        spotlight: dict | None = None,
+        keywords: list[str] | None = None,
+        study_url_path: str | None = None,
+        additional_picks: list[dict] | None = None,
+        hero_html: str | None = None,
+    ) -> str:
+        """홈/포스트 상세 공용 본문(프론트매터 제외) 생성. 모든 내부 링크는 site_url
+        절대 경로로 — / 와 /posts/<date>/ 양쪽에서 동일하게 동작하기 위함.
+        hero_html이 주어지면 그것을 사용 (포스트 상세는 _detail_hero_html("POSTS"…)
+        를 넘겨 자기만의 hero를 갖는다). 미지정 시 홈 hero를 자동 생성."""
+        site = self.site_url
+        headline_text = (headline or f"{display_date} AI 동향").strip()
+        headline_html = headline_text.replace("&", "&amp;").replace("<", "&lt;")
+
+        secondary_cta = (
+            f'    <a class="ai-cta ai-cta-secondary" href="{site}/{study_url_path}">\n'
+            '      <span class="ai-cta-label">📚 오늘의 학습</span>\n'
+            '      <span class="ai-cta-arrow" aria-hidden="true">→</span>\n'
+            "    </a>\n"
+            if study_url_path
+            else ""
+        )
+
+        if hero_html is None:
+            hero_html = (
+                '<section class="ai-home-hero">\n'
+                '  <p class="ai-eyebrow">AI NEWS · DAILY DIGEST</p>\n'
+                f'  <h1 class="ai-headline">{headline_html}</h1>\n'
+                f'  <p class="ai-meta">{display_date} · 매일 자동 발행</p>\n'
+                '  <div class="ai-cta-row">\n'
+                f'    <a class="ai-cta" href="{site}/posts/{date_str}/">\n'
+                '      <span class="ai-cta-label">최신 호 전체 보기</span>\n'
+                '      <span class="ai-cta-arrow" aria-hidden="true">→</span>\n'
+                "    </a>\n"
+                + secondary_cta
+                + "  </div>\n"
+                "</section>\n\n"
+            )
+
+        # spotlight pick의 사이트 내 상세 페이지 = 그날의 knowledge note.
+        # study_url_path가 있으면 absolute URL로 변환해 spotlight CTA에 연결.
+        spotlight_detail_url = (
+            f"{site}/{study_url_path}" if study_url_path else None
+        )
+        spotlight_html = self._build_spotlight_html(
+            spotlight, detail_url=spotlight_detail_url
+        )
+        additional_html = self._build_additional_picks_html(additional_picks)
+
+        tags_html = ""
+        if keywords:
+            chips = "".join(
+                f'<a class="ai-chip" href="{site}/tags/{k}/">#{k}</a>'
+                for k in keywords
+            )
+            tags_html = f'<nav class="ai-chips">{chips}</nav>\n\n'
+
+        body = body_text.strip() if body_text else ""
+        body_block = (
+            (
+                '<section class="ai-home-body">\n\n'
+                f"{body}\n\n"
+                "</section>\n\n"
+            )
+            if body
+            else ""
+        )
+
+        footer = (
+            '<footer class="ai-home-footer">\n'
+            '  <p class="ai-eyebrow">SOURCES</p>\n'
+            '  <p class="ai-source-list">'
+            "Anthropic · OpenAI · Google · DeepMind · "
+            "Simon Willison · Latent Space · LangChain · LlamaIndex · "
+            "AutoGen · CrewAI · Cursor · Cline · Aider · "
+            "Karpathy · Lilian Weng · Hamel Husain · Matt Pocock (AI Hero) · "
+            "TLDR AI · The Rundown · AlphaSignal · Ben's Bites · The Batch · "
+            "Reddit · Hacker News · Product Hunt · TechCrunch AI · "
+            "arxiv · HuggingFace Papers · GitHub Trending · Bluesky"
+            "</p>\n"
+            '  <p class="ai-home-links">'
+            f'<a href="{site}/posts/">📰 일간 요약</a>'
+            '<span class="ai-dot">·</span>'
+            f'<a href="{site}/knowledge/">📚 학습 노트</a>'
+            '<span class="ai-dot">·</span>'
+            f'<a href="{site}/tags/">🏷 태그</a>'
+            '<span class="ai-dot">·</span>'
+            f'<a href="{site}/posts/index.xml">🛰 RSS</a>'
+            '<span class="ai-dot">·</span>'
+            f'<a href="{site}/about/">📓 소개</a>'
+            "</p>\n"
+            "</footer>\n"
+        )
+
+        return (
+            hero_html
+            + spotlight_html
+            + additional_html
+            + tags_html
+            + body_block
+            + footer
+        )
+
     def _update_home(
         self,
         date_str: str,
@@ -484,160 +680,22 @@ class BlogPublisher:
         additional_picks: list[dict] | None = None,
     ) -> None:
         """홈 _index.md 작성. body_text는 combined_insights 본문(요약 callout 중복 회피)."""
-        # ─ Hero ────────────────────────────────────────────────────────────
-        # Apple 톤: 작은 eyebrow + 거대한 헤드라인 + 무거운 메타.
-        # goldmark unsafe=true 가 켜져 있어 raw HTML 통과.
-        headline_text = (headline or f"{display_date} AI 동향").strip()
-        # HTML escape 최소만 — 본문 큐레이션은 Claude가 만들어 신뢰 가능 텍스트.
-        headline_html = headline_text.replace("&", "&amp;").replace("<", "&lt;")
-
-        # 보조 CTA — 학습 브리프가 있을 때만 노출
-        secondary_cta = (
-            f'    <a class="ai-cta ai-cta-secondary" href="{study_url_path}">\n'
-            '      <span class="ai-cta-label">📚 오늘의 학습</span>\n'
-            '      <span class="ai-cta-arrow" aria-hidden="true">→</span>\n'
-            "    </a>\n"
-            if study_url_path
-            else ""
+        body = self._build_home_body(
+            date_str=date_str,
+            display_date=display_date,
+            body_text=body_text,
+            headline=headline,
+            spotlight=spotlight,
+            keywords=keywords,
+            study_url_path=study_url_path,
+            additional_picks=additional_picks,
         )
-
-        hero_html = (
-            '<section class="ai-home-hero">\n'
-            '  <p class="ai-eyebrow">AI NEWS · DAILY DIGEST</p>\n'
-            f'  <h1 class="ai-headline">{headline_html}</h1>\n'
-            f'  <p class="ai-meta">{display_date} · 매일 자동 발행</p>\n'
-            '  <div class="ai-cta-row">\n'
-            f'    <a class="ai-cta" href="posts/{date_str}/">\n'
-            '      <span class="ai-cta-label">최신 호 전체 보기</span>\n'
-            '      <span class="ai-cta-arrow" aria-hidden="true">→</span>\n'
-            "    </a>\n"
-            + secondary_cta
-            + "  </div>\n"
-            "</section>\n\n"
-        )
-
-        # ─ Spotlight 카드 ─────────────────────────────────────────────────
-        spotlight_html = ""
-        if spotlight and isinstance(spotlight, dict) and spotlight.get("title"):
-            sp_title = (spotlight.get("title") or "").strip()
-            sp_url = (spotlight.get("url") or "").strip()
-            sp_why = (spotlight.get("why") or "").strip()
-            sp_app = (spotlight.get("application") or "").strip()
-            sp_title_html = sp_title.replace("&", "&amp;").replace("<", "&lt;")
-            sp_why_html = sp_why.replace("&", "&amp;").replace("<", "&lt;")
-            sp_app_html = sp_app.replace("&", "&amp;").replace("<", "&lt;")
-
-            title_block = (
-                f'<a class="ai-spotlight-title" href="{sp_url}" '
-                f'target="_blank" rel="noopener">{sp_title_html}<span class="ai-spotlight-arrow">↗</span></a>'
-                if sp_url
-                else f'<span class="ai-spotlight-title">{sp_title_html}</span>'
-            )
-
-            spotlight_html = (
-                '<aside class="ai-spotlight">\n'
-                '  <p class="ai-eyebrow ai-spotlight-eyebrow">✦ THIS WEEK\'S PICK</p>\n'
-                f"  {title_block}\n"
-                f'  <p class="ai-spotlight-why">{sp_why_html}</p>\n'
-                '  <p class="ai-spotlight-app">'
-                '<span class="ai-spotlight-app-label">접목 →</span> '
-                f"{sp_app_html}</p>\n"
-                "</aside>\n\n"
-            )
-
-        # ─ Additional picks — "꼭 읽어보세요" 보조 카드 0~2개 ───────────────
-        additional_html = ""
-        if additional_picks:
-            cards = []
-            for pick in additional_picks:
-                p_title = (pick.get("title") or "").strip()
-                p_url = (pick.get("url") or "").strip()
-                p_summary = (pick.get("summary") or "").strip()
-                if not p_title or not p_summary:
-                    continue
-                p_title_e = p_title.replace("&", "&amp;").replace("<", "&lt;")
-                p_sum_e = p_summary.replace("&", "&amp;").replace("<", "&lt;")
-                title_block = (
-                    f'<a class="ai-pick-title" href="{p_url}" target="_blank" rel="noopener">'
-                    f'{p_title_e}<span class="ai-pick-arrow">↗</span></a>'
-                    if p_url
-                    else f'<span class="ai-pick-title">{p_title_e}</span>'
-                )
-                cards.append(
-                    f'<article class="ai-pick">\n'
-                    f'  {title_block}\n'
-                    f'  <p class="ai-pick-summary">{p_sum_e}</p>\n'
-                    f'</article>'
-                )
-            if cards:
-                additional_html = (
-                    '<section class="ai-additional">\n'
-                    '  <p class="ai-eyebrow">ALSO WORTH READING · 꼭 읽어보세요</p>\n'
-                    '  <div class="ai-pick-list">\n  '
-                    + "\n  ".join(cards) + "\n"
-                    "  </div>\n"
-                    "</section>\n\n"
-                )
-
-        # ─ Tag chips ──────────────────────────────────────────────────────
-        tags_html = ""
-        if keywords:
-            chips = "".join(
-                f'<a class="ai-chip" href="tags/{k}/">#{k}</a>'
-                for k in keywords
-            )
-            tags_html = f'<nav class="ai-chips">{chips}</nav>\n\n'
-
-        # ─ Body (통합 인사이트 본문) ────────────────────────────────────
-        body = body_text.strip() if body_text else ""
-        body_block = (
-            (
-                '<section class="ai-home-body">\n\n'
-                f"{body}\n\n"
-                "</section>\n\n"
-            )
-            if body
-            else ""
-        )
-
-        # ─ Footer (소스·아카이브) ─────────────────────────────────────────
-        footer = (
-            '<footer class="ai-home-footer">\n'
-            '  <p class="ai-eyebrow">SOURCES</p>\n'
-            '  <p class="ai-source-list">'
-            "Anthropic · OpenAI · Google · DeepMind · "
-            "Simon Willison · Latent Space · LangChain · LlamaIndex · "
-            "AutoGen · CrewAI · Cursor · Cline · Aider · "
-            "Karpathy · Lilian Weng · Hamel Husain · "
-            "TLDR AI · The Rundown · AlphaSignal · Ben's Bites · The Batch · "
-            "Reddit · Hacker News · Product Hunt · TechCrunch AI · "
-            "arxiv · HuggingFace Papers · GitHub Trending · Bluesky"
-            "</p>\n"
-            '  <p class="ai-home-links">'
-            '<a href="posts/">📰 일간 요약</a>'
-            '<span class="ai-dot">·</span>'
-            '<a href="knowledge/">📚 학습 노트</a>'
-            '<span class="ai-dot">·</span>'
-            '<a href="tags/">🏷 태그</a>'
-            '<span class="ai-dot">·</span>'
-            '<a href="posts/index.xml">🛰 RSS</a>'
-            '<span class="ai-dot">·</span>'
-            '<a href="about/">📓 소개</a>'
-            "</p>\n"
-            "</footer>\n"
-        )
-
         page = (
             "---\n"
             'title: "AI News Digest"\n'
             "toc: false\n"
             "---\n\n"
-            + hero_html
-            + spotlight_html
-            + additional_html
-            + tags_html
-            + body_block
-            + footer
+            + body
         )
         (self.blog_repo / "content" / "_index.md").write_text(page, encoding="utf-8")
 

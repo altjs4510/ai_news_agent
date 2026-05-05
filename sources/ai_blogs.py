@@ -2,10 +2,12 @@ import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
 import asyncio
+import json
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -57,17 +59,62 @@ DEV_AGENT_FEEDS = [
     ("https://eugeneyan.com/rss/", "Eugene Yan"),
     ("https://huyenchip.com/feed.xml", "Chip Huyen"),
     ("https://hamel.dev/index.xml", "Hamel Husain"),
+    # AI 엔지니어링 워크샵 (TS·에이전트·evals 실습 톤 — 다른 소스에 없는 결).
+    # cutoff(7일) 필터로 evergreen 글이 매번 등장하는 건 자동 차단.
+    ("https://www.aihero.dev/rss.xml", "Matt Pocock — AI Hero"),
 ]
 
 
 class AIBlogCollector:
-    """AI 블로그 통합 수집기 — 공식 회사 블로그 + 에이전트/MCP 엔지니어링 블로그."""
+    """AI 블로그 통합 수집기 — 공식 회사 블로그 + 에이전트/MCP 엔지니어링 블로그.
 
-    def __init__(self, days: int = 7, per_source_limit: int = 15, per_extra_limit: int = 5):
+    state_file이 주어지면 cross-run URL dedup 적용 — 한 번 fetch_posts에서
+    수집된 URL은 그 이후 run에선 제외. aihero.dev처럼 RSS pubDate가 모든
+    아이템에 동일한 build time으로 박혀서 7일 cutoff가 무력한 소스를 위한
+    안전망. 일반 RSS도 부수효과로 같은 글 중복 노출 방지."""
+
+    SEEN_URL_CAP = 1500  # 무한 증가 방지용 롤링 cap
+
+    def __init__(
+        self,
+        days: int = 7,
+        per_source_limit: int = 15,
+        per_extra_limit: int = 5,
+        state_file: Path | str | None = None,
+    ):
         self.cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         self.per_source_limit = per_source_limit
         # 에이전트/엔지니어링 피드는 노이즈가 많아 별도 더 작은 cap 적용
         self.per_extra_limit = per_extra_limit
+        self.state_file = Path(state_file) if state_file else None
+        self._seen_urls: set[str] = self._load_seen()
+
+    def _load_seen(self) -> set[str]:
+        if not self.state_file or not self.state_file.exists():
+            return set()
+        try:
+            data = json.loads(self.state_file.read_text(encoding="utf-8"))
+            return set(data.get("urls", []))
+        except Exception as e:
+            logger.warning(f"seen-URL state 로드 실패, 빈 셋으로 시작: {e}")
+            return set()
+
+    def _save_seen(self, fresh_urls: set[str]) -> None:
+        if not self.state_file:
+            return
+        merged = self._seen_urls | fresh_urls
+        # 롤링 cap — 너무 오래된 URL은 자연 만료
+        urls_sorted = sorted(merged)
+        if len(urls_sorted) > self.SEEN_URL_CAP:
+            urls_sorted = urls_sorted[-self.SEEN_URL_CAP:]
+        try:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            self.state_file.write_text(
+                json.dumps({"urls": urls_sorted}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            logger.warning(f"seen-URL state 저장 실패: {e}")
 
     async def fetch_posts(self):
         # Meta AI 블로그는 SPA로 server HTML에서 제목 추출이 어려워 임시 보류.
@@ -88,6 +135,20 @@ class AIBlogCollector:
                 all_posts.extend(r)
             elif isinstance(r, Exception):
                 logger.error(f"AI 블로그 수집 부분 실패: {r}")
+
+        # cross-run dedup: state_file이 설정되어 있을 때만.
+        # 이전 run에서 이미 등장한 URL은 제외 — aihero.dev처럼 pubDate가 망가진
+        # 소스가 같은 워크샵을 매번 떠넘기는 걸 차단.
+        all_urls = {p["url"] for p in all_posts if p.get("url")}
+        if self.state_file:
+            fresh_posts = [p for p in all_posts if p.get("url") not in self._seen_urls]
+            self._save_seen(all_urls)
+            logger.info(
+                f"AI 블로그 총 {len(all_posts)}개 수집 → "
+                f"신규 {len(fresh_posts)}개 (dedup {len(all_posts) - len(fresh_posts)}개 제외)"
+            )
+            return fresh_posts
+
         logger.info(f"AI 블로그 총 {len(all_posts)}개 수집")
         return all_posts
 
