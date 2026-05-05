@@ -34,6 +34,20 @@ def _strip_leading_h1(text: str) -> str:
     return text
 
 
+def _demote_headings(text: str) -> str:
+    """본문 내 모든 ATX 헤딩을 한 단계씩 강등.
+    페이지 hero가 이미 h1을 가지므로 본문은 h2부터 시작해야 한다 (H1 중복 방지).
+    h6는 그대로 둔다(더 내릴 수 없음).
+    """
+    def _bump(m: re.Match) -> str:
+        hashes = m.group(1)
+        rest = m.group(2)
+        if len(hashes) >= 6:
+            return m.group(0)
+        return "#" * (len(hashes) + 1) + rest
+    return re.sub(r"(?m)^(#{1,5})(\s+\S)", _bump, text)
+
+
 def _is_meaningful(text: str) -> bool:
     body = _strip_existing_frontmatter(text)
     body = _strip_leading_h1(body)
@@ -623,6 +637,9 @@ class BlogPublisher:
             tags_html = f'<nav class="ai-chips">{chips}</nav>\n\n'
 
         body = body_text.strip() if body_text else ""
+        if body:
+            # hero가 이미 h1이므로 본문 마크다운 헤딩을 한 단계씩 강등 (H1 중복 방지)
+            body = _demote_headings(body)
         body_block = (
             (
                 '<section class="ai-home-body">\n\n'
