@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote as _urlquote
 
 from utils.logger import setup_logger
 
@@ -32,6 +33,19 @@ def _strip_leading_h1(text: str) -> str:
     text = re.sub(r"^#\s+[^\n]*\n", "", text, count=1).lstrip()
     text = re.sub(r"^수집 시간:[^\n]*\n", "", text, count=1).lstrip()
     return text
+
+
+def _hugo_slug(s: str) -> str:
+    """Hugo default urlize와 동일하게 변환:
+    1) lowercase
+    2) 공백 → 하이픈
+    3) UTF-8 percent-encode (한글 그대로 보존하되 브라우저 호환을 위해 인코딩)
+    예: "Claude Skills" → "claude-skills"
+        "에이전트 권한 경계" → "%EC%97%90%EC%9D%B4%EC%A0%84%ED%8A%B8-..."
+    """
+    s = (s or "").strip().lower()
+    s = re.sub(r"\s+", "-", s)
+    return _urlquote(s, safe="-")
 
 
 def _demote_headings(text: str) -> str:
@@ -647,7 +661,7 @@ class BlogPublisher:
         tags_html = ""
         if keywords:
             chips = "".join(
-                f'<a class="ai-chip" href="{site}/tags/{k}/">#{k}</a>'
+                f'<a class="ai-chip" href="{site}/tags/{_hugo_slug(k)}/">#{k}</a>'
                 for k in keywords
             )
             tags_html = f'<nav class="ai-chips">{chips}</nav>\n\n'
@@ -663,27 +677,35 @@ class BlogPublisher:
         body_block = f"{body}\n\n" if body else ""
 
         footer = (
+            # 출처를 의미 그룹으로 묶어 시각 wall을 끊는다.
+            # 라벨 없이 줄바꿈만으로 자연스럽게 "공식·전문가·뉴스레터·커뮤니티·연구"
+            # 흐름이 보이도록.
             '<footer class="ai-home-footer">\n'
             '  <p class="ai-eyebrow">SOURCES</p>\n'
-            '  <p class="ai-source-list">'
-            "Anthropic · OpenAI · Google · DeepMind · "
-            "Simon Willison · Latent Space · LangChain · LlamaIndex · "
-            "AutoGen · CrewAI · Cursor · Cline · Aider · "
-            "Karpathy · Lilian Weng · Hamel Husain · Matt Pocock (AI Hero) · "
-            "TLDR AI · The Rundown · AlphaSignal · Ben's Bites · The Batch · "
-            "Reddit · Hacker News · Product Hunt · TechCrunch AI · "
-            "arxiv · HuggingFace Papers · GitHub Trending · Bluesky"
-            "</p>\n"
+            '  <div class="ai-source-grid">\n'
+            '    <p class="ai-source-row"><span class="ai-source-label">공식</span>'
+            'Anthropic · OpenAI · Google · DeepMind</p>\n'
+            '    <p class="ai-source-row"><span class="ai-source-label">전문가</span>'
+            "Simon Willison · Karpathy · Lilian Weng · Hamel Husain · Matt Pocock (AI Hero)</p>\n"
+            '    <p class="ai-source-row"><span class="ai-source-label">에이전트·툴</span>'
+            "LangChain · LlamaIndex · AutoGen · CrewAI · Cursor · Cline · Aider</p>\n"
+            '    <p class="ai-source-row"><span class="ai-source-label">뉴스레터</span>'
+            "Latent Space · TLDR AI · The Rundown · AlphaSignal · Ben's Bites · The Batch</p>\n"
+            '    <p class="ai-source-row"><span class="ai-source-label">커뮤니티</span>'
+            "Reddit · Hacker News · Product Hunt · TechCrunch AI · Bluesky</p>\n"
+            '    <p class="ai-source-row"><span class="ai-source-label">연구·코드</span>'
+            "arxiv · HuggingFace Papers · GitHub Trending</p>\n"
+            "  </div>\n"
             '  <p class="ai-home-links">'
-            f'<a href="{site}/posts/">📰 일간 요약</a>'
+            f'<a href="{site}/posts/">일간 요약</a>'
             '<span class="ai-dot">·</span>'
-            f'<a href="{site}/knowledge/">📚 학습 노트</a>'
+            f'<a href="{site}/knowledge/">학습 노트</a>'
             '<span class="ai-dot">·</span>'
-            f'<a href="{site}/tags/">🏷 태그</a>'
+            f'<a href="{site}/tags/">태그</a>'
             '<span class="ai-dot">·</span>'
-            f'<a href="{site}/posts/index.xml">🛰 RSS</a>'
+            f'<a href="{site}/posts/index.xml">RSS</a>'
             '<span class="ai-dot">·</span>'
-            f'<a href="{site}/about/">📓 소개</a>'
+            f'<a href="{site}/about/">소개</a>'
             "</p>\n"
             "</footer>\n"
         )
