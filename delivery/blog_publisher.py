@@ -437,6 +437,17 @@ class BlogPublisher:
 
         post_h1 = (headline or f"{display_date} AI 동향").strip()
 
+        # OG / Twitter description 폴백용. raw HTML hero가 본문 시작이라
+        # Hugo의 .Summary 자동 추출이 비어 — frontmatter description을
+        # 직접 박아 SNS 공유 시 미리보기가 채워지도록.
+        # 우선순위: deck > headline. 둘 다 없으면 frontmatter 자체 생략(site
+        # description 폴백).
+        desc_text = (deck or "").strip() or post_h1
+        desc_yaml = ""
+        if desc_text:
+            esc = desc_text.replace("\\", "\\\\").replace('"', '\\"')
+            desc_yaml = f'description: "{esc}"\n'
+
         # Posts 상세 페이지는 그날의 홈 컨텐츠(spotlight/추천/태그/본문/푸터)를
         # 그대로 아카이브하되, hero만 post 전용 디자인으로 — 좌상단 ← POSTS 백링크
         # 가 자연스럽게 목록(/posts/)으로 돌아가는 진입점이 된다. 홈은 자기 hero
@@ -472,6 +483,7 @@ class BlogPublisher:
                 # layout: single을 명시해 blog/single.html (toc partial 호출, 본문 prose 렌더)
                 # 으로 강제 매칭한다.
                 'layout: single\n'
+                + desc_yaml
                 + tags_yaml
                 + cats_yaml
                 + "---\n\n"
@@ -489,6 +501,7 @@ class BlogPublisher:
                 # layout: single을 명시해 blog/single.html (toc partial 호출, 본문 prose 렌더)
                 # 으로 강제 매칭한다.
                 'layout: single\n'
+                + desc_yaml
                 + tags_yaml
                 + cats_yaml
                 + "---\n\n"
