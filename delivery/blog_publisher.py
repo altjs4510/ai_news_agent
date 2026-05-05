@@ -440,6 +440,7 @@ class BlogPublisher:
                 f'title: "{post_h1}"\n'
                 f"date: {display_date}\n"
                 "toc: true\n"
+                "customHero: true\n"
                 + tags_yaml
                 + cats_yaml
                 + "---\n\n"
@@ -452,6 +453,7 @@ class BlogPublisher:
                 f'title: "{post_h1}"\n'
                 f"date: {display_date}\n"
                 "toc: true\n"
+                "customHero: true\n"
                 + tags_yaml
                 + cats_yaml
                 + "---\n\n"
