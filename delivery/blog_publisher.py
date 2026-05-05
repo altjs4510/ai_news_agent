@@ -529,8 +529,9 @@ class BlogPublisher:
                 f'title: "{display_date} 원본 수집 데이터"\n'
                 f"date: {display_date}\n"
                 # raw 페이지는 본문 footer 링크와 spotlight detail에서만 도달.
-                # /posts/ listing 및 RSS, sitemap에 노출되지 않도록 _build로 제외.
-                '_build:\n'
+                # /posts/ listing 및 RSS, sitemap에 노출되지 않도록 build로 제외.
+                # (Hugo 0.145+에서 `_build` → `build`로 키 이름 변경됨.)
+                'build:\n'
                 '  list: never\n'
                 '  render: always\n'
                 "---\n\n"
