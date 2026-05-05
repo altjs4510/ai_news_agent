@@ -331,7 +331,7 @@ class BlogPublisher:
 
         # 상세 페이지 hero — 홈 hero와 같은 톤. headline이 비어 있으면 일자 fallback.
         post_h1 = (headline or f"{display_date} AI 동향").strip()
-        post_hero = self._detail_hero_html("POSTS", display_date, "주간 요약", post_h1)
+        post_hero = self._detail_hero_html("POSTS", display_date, "일간 요약", post_h1)
 
         if sections:
             index_md = (
@@ -503,9 +503,9 @@ class BlogPublisher:
 
         hero_html = (
             '<section class="ai-home-hero">\n'
-            '  <p class="ai-eyebrow">AI NEWS · WEEKLY DIGEST</p>\n'
+            '  <p class="ai-eyebrow">AI NEWS · DAILY DIGEST</p>\n'
             f'  <h1 class="ai-headline">{headline_html}</h1>\n'
-            f'  <p class="ai-meta">{display_date} · 매주 월요일 자동 발행</p>\n'
+            f'  <p class="ai-meta">{display_date} · 매일 자동 발행</p>\n'
             '  <div class="ai-cta-row">\n'
             f'    <a class="ai-cta" href="posts/{date_str}/">\n'
             '      <span class="ai-cta-label">최신 호 전체 보기</span>\n'
@@ -614,7 +614,7 @@ class BlogPublisher:
             "arxiv · HuggingFace Papers · GitHub Trending · Bluesky"
             "</p>\n"
             '  <p class="ai-home-links">'
-            '<a href="posts/">📰 주간 요약</a>'
+            '<a href="posts/">📰 일간 요약</a>'
             '<span class="ai-dot">·</span>'
             '<a href="knowledge/">📚 학습 노트</a>'
             '<span class="ai-dot">·</span>'
