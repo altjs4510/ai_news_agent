@@ -1,10 +1,9 @@
-name: Daily AI News Digest
+name: Weekly AI News Digest
 
 on:
   schedule:
-    # 매일 21:00 UTC = 매일 06:00 KST
-    # 단, UTC 일요일(=KST 월요일)은 weekly.yml이 담당하므로 제외 → 1-6 (월~토 UTC).
-    - cron: "0 21 * * 1-6"
+    # 매주 일요일 21:00 UTC = 매주 월요일 06:00 KST
+    - cron: "0 21 * * 0"
   workflow_dispatch:  # 수동 트리거 허용
 
 permissions:
@@ -15,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     concurrency:
-      group: daily-ai-news
+      group: weekly-ai-news
       cancel-in-progress: false
     steps:
       - name: Checkout agent
@@ -46,7 +45,7 @@ jobs:
           git -C ai_news_blog_repo config user.email "altjs4510@gmail.com"
           git -C ai_news_blog_repo config user.name "cookie"
 
-      - name: Run agent (collect → summarize → publish)
+      - name: Run agent (collect → summarize → publish weekly)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
@@ -54,10 +53,9 @@ jobs:
           REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
           BLOG_REPO_PATH: ${{ github.workspace }}/ai_news_blog_repo
           BLOG_SITE_URL: https://altjs4510.github.io/ai_news_blog
-        run: uv run python main.py --mode daily
+        run: uv run python main.py --mode weekly
 
       # 마지막 수집 결과만 reports-cache 브랜치(orphan)로 강제 푸시.
-      # 히스토리 누적 없이 latest 1개만 보존 → republish.yml이 LLM/크롤 없이 재발행 가능.
       - name: Snapshot latest reports/<date> to reports-cache branch
         if: success()
         env:
@@ -90,5 +88,5 @@ jobs:
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           curl -sS -X POST -H 'Content-Type: application/json' \
-            --data "{\"text\":\":x: *AI News 수집 실패*\\n<${RUN_URL}|workflow run 보기>\"}" \
+            --data "{\"text\":\":x: *AI News Weekly 수집 실패*\\n<${RUN_URL}|workflow run 보기>\"}" \
             "$SLACK_WEBHOOK_URL"

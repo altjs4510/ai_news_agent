@@ -100,39 +100,27 @@ cd ai_news_agent
 
 ## 사용 방법
 
-### 수동 실행
+### 자동 스케줄링 (GitHub Actions)
+
+발행은 GitHub Actions의 두 워크플로가 담당:
+
+- **`.github/workflows/daily.yml`** — 매일 21:00 UTC (= 06:00 KST), 단 UTC 일요일 제외 (월요일은 weekly 담당). `--mode daily` 실행 → `/knowledge/YYYYMMDD/`에 그날의 픽 1개 발행.
+- **`.github/workflows/weekly.yml`** — 매주 일요일 21:00 UTC (= 월요일 06:00 KST). `--mode weekly` 실행 → `/posts/YYYYMMDD/`에 지난 7일 종합 발행.
+
+수동 트리거: GitHub Actions 탭에서 workflow_dispatch 또는 `gh workflow run`.
+
+필요한 secrets (Repo Settings → Secrets and variables → Actions):
+
+- `ANTHROPIC_API_KEY`
+- `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`
+- `BLOG_PUSH_TOKEN` — ai_news_blog 레포에 push 권한이 있는 PAT
+- `SLACK_WEBHOOK_URL` (옵션, 실패 알림)
+
+### 로컬 수동 실행 (디버깅용)
 ```bash
-# daily 모드 (24h, 1 pick)
+# .env 필요 (위 secrets와 동일 키)
 uv run main.py --mode daily
-
-# weekly 모드 (지난 7일, 전체 요약)
 uv run main.py --mode weekly
-
-# 또는 wrapper 스크립트
-./run_ai_news.sh daily
-./run_ai_news.sh weekly
-```
-
-### 자동 스케줄링 (launchd)
-
-화~일 23:30 daily + 월요일 06:00 weekly 두 plist를 별도로 등록.
-
-```bash
-# plist를 LaunchAgents 디렉토리로 복사
-cp com.ai-news.daily.plist ~/Library/LaunchAgents/
-cp com.ai-news.weekly.plist ~/Library/LaunchAgents/
-
-# 등록
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ai-news.daily.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ai-news.weekly.plist
-
-# 즉시 실행 (테스트)
-launchctl kickstart -k gui/$(id -u)/com.ai-news.daily
-launchctl kickstart -k gui/$(id -u)/com.ai-news.weekly
-
-# 해제
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.ai-news.daily.plist
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.ai-news.weekly.plist
 ```
 
 ## 결과 확인

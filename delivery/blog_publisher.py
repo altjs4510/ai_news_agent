@@ -89,9 +89,10 @@ class BlogPublisher:
             "BLOG_SITE_URL", "https://altjs4510.github.io/ai_news_blog"
         ).rstrip("/")
         # daily / weekly 양 mode 사이의 home 상태 공유 파일.
-        # ai_news_agent 디렉토리에 두어 블로그 레포 reset에 영향 받지 않도록.
-        agent_root = Path(__file__).resolve().parent.parent
-        self.state_dir = agent_root / "state"
+        # CI(GitHub Actions)는 매 run마다 fresh container라 agent repo에 두면 사라진다.
+        # blog repo는 publish 단계에서 어차피 commit하므로, blog repo의
+        # `.agent-state/` (Hugo가 안 읽는 dotdir)에 두면 자연 persist.
+        self.state_dir = self.blog_repo / ".agent-state"
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.state_path = self.state_dir / "home_state.json"
 
@@ -1016,6 +1017,8 @@ class BlogPublisher:
 
         try:
             _run(["add", "content/"])
+            # .agent-state/도 함께 commit — daily/weekly 사이 home 상태 공유 파일
+            _run(["add", ".agent-state/"], check=False)
             staged = _run(["diff", "--cached", "--quiet"], check=False)
             if staged.returncode == 0:
                 logger.info("블로그에 변경 사항이 없어 commit을 건너뜁니다.")

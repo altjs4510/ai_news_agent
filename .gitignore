@@ -22,9 +22,6 @@ logs/
 reports/
 outputs/
 
-# Cross-run dedup state (locally persisted on cron host)
-state/
-
 # MacOS system files
 .DS_Store
 
