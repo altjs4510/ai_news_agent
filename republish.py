@@ -49,6 +49,7 @@ async def main() -> int:
     # publisher 템플릿이 바뀌면 summary.md도 같이 재생성해야 변경이 반영됨.
     # (publisher는 summary.md를 그대로 읽어서 post에 끼워 넣기 때문)
     headline = meta.get("headline") or ""
+    deck = meta.get("deck") or ""
     spotlight = meta.get("spotlight") or None
     keywords = meta.get("keywords") or []
     additional_picks = meta.get("additional_picks") or []
@@ -68,6 +69,7 @@ async def main() -> int:
         date_str=date_str,
         keywords=keywords,
         headline=headline,
+        deck=deck,
         spotlight=spotlight,
         additional_picks=additional_picks,
         categories=categories,

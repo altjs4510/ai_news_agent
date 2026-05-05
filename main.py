@@ -238,6 +238,7 @@ async def main():
 
         summary, keywords = None, None
         headline = ""
+        deck = ""
         spotlight = None
         additional_picks: list[dict] = []
         categories: list[str] = []
@@ -258,6 +259,7 @@ async def main():
                         and "categories" in cached
                     ):
                         headline = cached.get("headline", "")
+                        deck = cached.get("deck", "") or ""
                         spotlight = cached.get("spotlight") or None
                         keywords = cached.get("keywords") or []
                         additional_picks = cached.get("additional_picks") or []
@@ -275,7 +277,7 @@ async def main():
 
             if cached is None:
                 try:
-                    headline, spotlight, additional_picks, summary, keywords, categories = await generate_summary_and_keywords(
+                    headline, deck, spotlight, additional_picks, summary, keywords, categories = await generate_summary_and_keywords(
                         aitimes_content, youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content
                     )
                 except Exception as e:
@@ -312,6 +314,7 @@ async def main():
             meta = {
                 "date_str": date_str,
                 "headline": headline or "",
+                "deck": deck or "",
                 "spotlight": spotlight or {},
                 "additional_picks": additional_picks or [],
                 "categories": list(categories or []),
@@ -334,6 +337,7 @@ async def main():
                     date_str,
                     keywords=keywords,
                     headline=headline,
+                    deck=deck,
                     spotlight=spotlight,
                     additional_picks=additional_picks,
                     categories=categories,
@@ -742,6 +746,11 @@ ai_news_agent는 보조 후보입니다.
 
 1. **headline (1줄, 80자 내외)** — 이번 호를 관통하는 핵심 흐름.
 
+   **deck (1줄, 90자 내외)** — 헤드라인 바로 아래 들어가는 부제 한 줄.
+   "왜 이 흐름이 지금 의미 있는지"를 자연스러운 한국어로. 헤드라인을 그대로 풀어 쓰지 말고,
+   독자가 본문을 읽기 전 "한 단계 더 들어가서 보여 줘야 할 함의"를 한 문장으로.
+   메타 표현("이번 호는~", "오늘 우리는~") 금지. 사실에 기반한 압축 표현.
+
 2. **spotlight (1개만)** — 자료 중에서 사용자가 직접 PoC/공부하면 가장 도움이 될 항목 1개를 선정하세요.
    우선순위: **DCSAI 또는 Team Agent에 곧장 접목 가능한 항목 > AI 에이전트/MCP/멀티에이전트 학습 가치가 큰 항목 > ai_news_agent 개선용 항목**.
    단순 모델 발표/벤치마크 뉴스보다, 코드·아키텍처·도구·오픈소스를 우선 고르세요.
@@ -770,6 +779,7 @@ ai_news_agent는 보조 후보입니다.
 ## 응답 형식 (JSON, 다른 텍스트 금지)
 {{
   "headline": "...",
+  "deck": "...",
   "spotlight": {{
     "title": "...",
     "url": "https://...",
@@ -804,6 +814,7 @@ ai_news_agent는 보조 후보입니다.
             json_str = cleaned[start : end + 1]
             result_json = json.loads(json_str)
             headline = result_json.get('headline', '')
+            deck = (result_json.get('deck') or '').strip()
             spotlight = result_json.get('spotlight') or None
             summary = result_json.get('summary', [])  # legacy, 더 이상 사용 안 함
             keywords = result_json.get('keywords', [])
@@ -854,13 +865,15 @@ ai_news_agent는 보조 후보입니다.
                 raise ValueError("키워드가 충분히 생성되지 않았습니다.")
 
             logger.info(f"헤드라인: {headline}")
+            if deck:
+                logger.info(f"Deck: {deck}")
             if spotlight:
                 logger.info(f"Spotlight: {spotlight.get('title')}")
             if additional_picks:
                 logger.info(f"Additional picks ({len(additional_picks)}): {[p['title'] for p in additional_picks]}")
             logger.info(f"카테고리: {categories}")
             logger.info(f"키워드 생성 완료: {keywords}")
-            return headline, spotlight, additional_picks, summary, keywords, categories
+            return headline, deck, spotlight, additional_picks, summary, keywords, categories
         raise ValueError("JSON 형식으로 응답이 오지 않았습니다.")
     
     except Exception as e:

@@ -87,18 +87,26 @@ class BlogPublisher:
         ).rstrip("/")
 
     @staticmethod
-    def _detail_hero_html(kind: str, display_date: str, meta: str, title: str) -> str:
+    def _detail_hero_html(
+        kind: str, display_date: str, meta: str, title: str, deck: str | None = None
+    ) -> str:
         """상세 페이지 hero — 홈 hero와 같은 결.
-        kind 텍스트는 섹션 인덱스로 돌아가는 클릭 가능한 백링크가 된다."""
+        kind 텍스트는 섹션 인덱스로 돌아가는 클릭 가능한 백링크가 된다.
+        deck이 주어지면 헤드라인 아래 한 줄 부제(에디토리얼 데크)를 추가한다."""
         # h2 (not h1) — Hextra single layout already emits an <h1> from
         # frontmatter title; keeping this as h2 ensures exactly one h1 in
         # the document outline. CSS hides Hextra's auto h1 visually and
         # styles .ai-post-title to look like an h1.
         t = (title or "").strip().replace("&", "&amp;").replace("<", "&lt;")
+        d = (deck or "").strip().replace("&", "&amp;").replace("<", "&lt;")
+        deck_html = (
+            f'  <p class="ai-post-deck">{d}</p>\n' if d else ""
+        )
         return (
             '<header class="ai-post-hero">\n'
             f'  <p class="ai-eyebrow"><a class="ai-back" href="../">{kind}</a> · {display_date} · {meta}</p>\n'
             f'  <h2 class="ai-post-title">{t}</h2>\n'
+            f'{deck_html}'
             "</header>\n\n"
         )
 
@@ -361,6 +369,7 @@ class BlogPublisher:
         date_str: str,
         keywords: list[str] | None = None,
         headline: str | None = None,
+        deck: str | None = None,
         spotlight: dict | None = None,
         additional_picks: list[dict] | None = None,
         categories: list[str] | None = None,
@@ -433,7 +442,7 @@ class BlogPublisher:
         # 가 자연스럽게 목록(/posts/)으로 돌아가는 진입점이 된다. 홈은 자기 hero
         # (ai-home-hero) 그대로 유지.
         post_hero = self._detail_hero_html(
-            "POSTS", display_date, "일간 요약", post_h1
+            "POSTS", display_date, "일간 요약", post_h1, deck=deck
         )
         home_body_for_post = self._build_home_body(
             date_str=date_str,
@@ -601,6 +610,7 @@ class BlogPublisher:
             date_str, display_date, combined_body, headline, spotlight, clean_tags,
             study_url_path=study_url_path,
             additional_picks=additional_picks,
+            deck=deck,
         )
 
         if not self._git_commit_and_push(date_str):
@@ -619,14 +629,22 @@ class BlogPublisher:
         study_url_path: str | None = None,
         additional_picks: list[dict] | None = None,
         hero_html: str | None = None,
+        deck: str | None = None,
     ) -> str:
         """홈/포스트 상세 공용 본문(프론트매터 제외) 생성. 모든 내부 링크는 site_url
         절대 경로로 — / 와 /posts/<date>/ 양쪽에서 동일하게 동작하기 위함.
         hero_html이 주어지면 그것을 사용 (포스트 상세는 _detail_hero_html("POSTS"…)
-        를 넘겨 자기만의 hero를 갖는다). 미지정 시 홈 hero를 자동 생성."""
+        를 넘겨 자기만의 hero를 갖는다). 미지정 시 홈 hero를 자동 생성.
+        deck이 있으면 헤드라인 아래 한 줄 부제(에디토리얼 데크)를 출력."""
         site = self.site_url
         headline_text = (headline or f"{display_date} AI 동향").strip()
         headline_html = headline_text.replace("&", "&amp;").replace("<", "&lt;")
+        deck_text = (deck or "").strip()
+        deck_html = (
+            f'  <p class="ai-home-deck">{deck_text.replace("&", "&amp;").replace("<", "&lt;")}</p>\n'
+            if deck_text
+            else ""
+        )
 
         secondary_cta = (
             f'    <a class="ai-cta ai-cta-secondary" href="{site}/{study_url_path}">\n'
@@ -642,7 +660,8 @@ class BlogPublisher:
                 '<section class="ai-home-hero">\n'
                 '  <p class="ai-eyebrow">AI NEWS · DAILY DIGEST</p>\n'
                 f'  <h1 class="ai-headline">{headline_html}</h1>\n'
-                f'  <p class="ai-meta">{display_date} · 매일 자동 발행</p>\n'
+                + deck_html
+                + f'  <p class="ai-meta">{display_date} · 매일 자동 발행</p>\n'
                 '  <div class="ai-cta-row">\n'
                 f'    <a class="ai-cta" href="{site}/posts/{date_str}/">\n'
                 '      <span class="ai-cta-label">최신 호 전체 보기</span>\n'
@@ -734,6 +753,7 @@ class BlogPublisher:
         keywords: list[str] | None = None,
         study_url_path: str | None = None,
         additional_picks: list[dict] | None = None,
+        deck: str | None = None,
     ) -> None:
         """홈 _index.md 작성. body_text는 combined_insights 본문(요약 callout 중복 회피)."""
         body = self._build_home_body(
@@ -745,6 +765,7 @@ class BlogPublisher:
             keywords=keywords,
             study_url_path=study_url_path,
             additional_picks=additional_picks,
+            deck=deck,
         )
         page = (
             "---\n"
