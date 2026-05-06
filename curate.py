@@ -2,7 +2,7 @@
 
 매일 daily.yml 직후 자동 실행되어:
 1. content/knowledge/*.md 의 frontmatter + 본문 일부를 읽음
-2. CATEGORY_VOCABULARY 8개 중 1~2개를 Sonnet에 골라달라고 요청
+2. CATEGORY_VOCABULARY 8개 중 정확히 1개를 Sonnet에 골라달라고 요청
 3. 기존 categories와 다르면 frontmatter 업데이트
 4. 모든 detail 사이드바 + index 사이드바 일괄 갱신
 5. 변경 내역을 git commit message로 요약 + 블로그 push
@@ -65,7 +65,7 @@ def _strip_frontmatter(text: str) -> str:
 
 async def _classify(client: Anthropic, title: str, body_excerpt: str) -> list[str]:
     vocab_block = "\n".join(f"- {c}" for c in CATEGORY_VOCABULARY)
-    prompt = f"""다음 학습 노트를 아래 vocabulary에서 1~2개 카테고리로 분류하세요.
+    prompt = f"""다음 학습 노트를 아래 vocabulary에서 정확히 1개 카테고리로 분류하세요.
 새 단어 만들지 말고 vocabulary에서 정확히 그대로 옮겨 적으세요.
 
 ## 학습 노트
@@ -78,14 +78,14 @@ async def _classify(client: Anthropic, title: str, body_excerpt: str) -> list[st
 {vocab_block}
 
 ## 응답 형식 (JSON only)
-{{"categories": ["...", "..."]}}
+{{"categories": ["..."]}}
 """
     response = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=200,
         system=(
             "너는 기술 콘텐츠 분류 전문가다. 주어진 학습 노트를 고정된 카테고리 vocabulary에서 "
-            "가장 적합한 1~2개 카테고리에 매핑한다. vocabulary 밖 단어는 만들지 않는다."
+            "가장 적합한 1개 카테고리에 매핑한다. vocabulary 밖 단어는 만들지 않는다."
         ),
         messages=[{"role": "user", "content": prompt}],
     )
@@ -104,7 +104,7 @@ async def _classify(client: Anthropic, title: str, body_excerpt: str) -> list[st
     cats = data.get("categories") or []
     if not isinstance(cats, list):
         return []
-    return [c for c in cats if isinstance(c, str) and c in CATEGORY_VOCABULARY][:2]
+    return [c for c in cats if isinstance(c, str) and c in CATEGORY_VOCABULARY][:1]
 
 
 def _replace_categories(text: str, new_cats: list[str]) -> str:

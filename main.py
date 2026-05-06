@@ -842,8 +842,8 @@ ai_news_agent는 보조 후보입니다.
      - url: 자료에 등장한 URL (절대 임의 생성 금지)
      - summary: 무엇을 다루는지 + 왜 함께 읽을만한지 1~2문장(한국어). spotlight의 why/application 형식과 달리 한 문단으로 통합.
 
-4. **categories (1~2개)** — 아래 **고정 vocabulary**에서만 선택. **새 단어 만들면 안 됩니다.**
-   spotlight + 이번 호 흐름이 가장 많이 걸치는 카테고리 1~2개를 정확히 그대로 옮겨 적으세요.
+4. **categories (정확히 1개)** — 아래 **고정 vocabulary**에서만 선택. **새 단어 만들면 안 됩니다.**
+   spotlight + 이번 호 흐름을 가장 잘 나타내는 카테고리 1개를 정확히 그대로 옮겨 적으세요.
    {category_vocab_block}
 
 5. **keywords 5개** — 이번 호 핵심 주제 (각 2~3 단어). 자유 생성. categories와 별도.
@@ -894,8 +894,7 @@ ai_news_agent는 보조 후보입니다.
             keywords = result_json.get('keywords', [])
             additional_picks_raw = result_json.get('additional_picks') or []
 
-            # categories 정제 — vocabulary 안에 있는 것만 통과, 최대 2개로 cap.
-            # LLM이 vocabulary 밖 단어를 만들면 (그래선 안 되지만) 그건 keywords로 흘려보냄.
+            # categories 정제 — vocabulary 안에 있는 것만 통과, 정확히 1개로 cap.
             raw_categories = result_json.get('categories') or []
             categories: list[str] = []
             for c in raw_categories:
@@ -904,7 +903,7 @@ ai_news_agent는 보조 후보입니다.
                 c = c.strip().strip('"').strip("'").strip()
                 if c in CATEGORY_VOCABULARY and c not in categories:
                     categories.append(c)
-                if len(categories) >= 2:
+                if len(categories) >= 1:
                     break
             if not categories:
                 # fallback — vocabulary 매칭 실패 시 첫 항목 부여(빈 사이드바 방지)
