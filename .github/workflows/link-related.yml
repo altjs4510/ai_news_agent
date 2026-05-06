@@ -64,8 +64,12 @@ jobs:
         if: failure()
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ANTHROPIC_ADMIN_KEY: ${{ secrets.ANTHROPIC_ADMIN_KEY }}
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          COST_LINE="$(uv run python -m utils.anthropic_cost 2>/dev/null || echo '사용 비용: (조회 실패)')"
+          export COST_LINE
+          payload=$(python3 -c 'import json,os; text=":x: *관련 링크 삽입 실패*\n<"+os.environ["RUN_URL"]+"|workflow run 보기>\n"+os.environ["COST_LINE"]; print(json.dumps({"text": text}))')
           curl -sS -X POST -H 'Content-Type: application/json' \
-            --data "{\"text\":\":x: *관련 링크 삽입 실패*\\n<${RUN_URL}|workflow run 보기>\"}" \
+            --data "$payload" \
             "$SLACK_WEBHOOK_URL"

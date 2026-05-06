@@ -115,6 +115,7 @@ cd ai_news_agent
 - `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`
 - `BLOG_PUSH_TOKEN` — ai_news_blog 레포에 push 권한이 있는 PAT
 - `SLACK_WEBHOOK_URL` (옵션, 실패 알림)
+- `ANTHROPIC_ADMIN_KEY` (옵션, sk-ant-admin01-… — 설정하면 Slack 실패 알림에 오늘/이번달 Anthropic 사용 비용을 함께 표시)
 
 ### 로컬 수동 실행 (디버깅용)
 ```bash
