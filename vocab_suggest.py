@@ -15,9 +15,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from anthropic import Anthropic
-
 from main import CATEGORY_VOCABULARY
+from utils.llm_client import make_client, resolve_model
 from utils.logger import setup_logger
 
 logger = setup_logger("vocab_suggest")
@@ -116,9 +115,9 @@ CATEGORY_VOCABULARY = [
 def _generate_suggestion(dist: dict) -> str:
     if not dist["entries"]:
         return "## ℹ️ 학습 노트가 아직 없어 vocabulary 진화 제안을 생성하지 않습니다."
-    client = Anthropic()
+    client = make_client()
     response = client.messages.create(
-        model="claude-opus-4-7",
+        model=resolve_model("claude-opus-4-7"),
         max_tokens=4000,
         system=(
             "너는 정보 아키텍처 전문가다. 콘텐츠 분포를 보고 카테고리 vocabulary가 "

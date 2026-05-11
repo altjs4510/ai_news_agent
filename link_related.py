@@ -17,8 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from anthropic import Anthropic
-
+from utils.llm_client import make_client, resolve_model
 from utils.logger import setup_logger
 
 logger = setup_logger("link_related")
@@ -61,7 +60,7 @@ def _get_excerpt(text: str, max_chars: int = 600) -> str:
 
 
 def _find_related(
-    client: Anthropic,
+    client,
     target_date: str,
     target_title: str,
     target_excerpt: str,
@@ -89,7 +88,7 @@ id={target_date}
 관련 노트가 없으면 {{"related": []}}
 """
     resp = client.messages.create(
-        model="claude-sonnet-4-6",
+        model=resolve_model("claude-sonnet-4-6"),
         max_tokens=150,
         system=(
             "기술 문서 유사도 전문가. 개념적으로 가장 관련 깊은 노트 id를 2~3개 골라 "
@@ -176,7 +175,7 @@ def main() -> int:
             "path": md,
         }
 
-    client = Anthropic()
+    client = make_client()
     changes = 0
 
     for date, info in index.items():

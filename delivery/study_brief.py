@@ -9,8 +9,7 @@ DCSAI / Team Agent 컨텍스트와 함께 Claude에 던져
 import re
 import aiohttp
 from bs4 import BeautifulSoup
-from anthropic import Anthropic
-
+from utils.llm_client import make_client, resolve_model
 from utils.logger import setup_logger
 
 logger = setup_logger("study_brief")
@@ -114,9 +113,9 @@ async def _generate_structured_brief(spotlight: dict, raw_text: str) -> str | No
 """
 
     try:
-        client = Anthropic()
+        client = make_client()
         response = client.messages.create(
-            model="claude-opus-4-7",
+            model=resolve_model("claude-opus-4-7"),
             max_tokens=6000,
             system=(
                 "너는 단 한 자료를 깊이 학습하도록 돕는 한국어 학습 큐레이터다. "
@@ -163,9 +162,9 @@ async def _generate_full_translation(spotlight: dict, raw_text: str) -> str | No
 """
 
     try:
-        client = Anthropic()
+        client = make_client()
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=resolve_model("claude-sonnet-4-6"),
             max_tokens=12000,
             system=(
                 "너는 정확한 한국어 기술 번역가다. 영문 기술 자료를 한 문단도 빠뜨리지 않고 "

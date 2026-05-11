@@ -18,8 +18,7 @@ from delivery.blog_publisher import BlogPublisher
 from utils.logger import setup_logger
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import anthropic
-from anthropic import Anthropic, AsyncAnthropic
+from utils.llm_client import make_client, make_async_client, resolve_model
 
 KST = ZoneInfo("Asia/Seoul")
 from utils.html_cleaner import clean_markdown_file
@@ -243,6 +242,23 @@ async def main(mode: str = "daily"):
         additional_picks: list[dict] = []
         categories: list[str] = []
         if ENABLE_BLOG or ENABLE_NOTION:
+            # weekly 모드는 같은 주 daily picks를 LLM 컨텍스트로 줘서 spotlight와
+            # 의미 기반 매칭을 시킨다. 결과 spotlight["related_daily"]가 매칭된
+            # daily knowledge의 date_str이면 publisher가 그 페이지로 CTA를 건다.
+            # daily_picks는 blog repo의 home_state.json에 누적된다.
+            available_daily_picks: list[dict] = []
+            if mode == "weekly" and ENABLE_BLOG:
+                try:
+                    _pub_for_state = BlogPublisher()
+                    _state = _pub_for_state._load_state()
+                    available_daily_picks = _state.get("daily_picks") or []
+                    logger.info(
+                        f"weekly 모드 — daily picks {len(available_daily_picks)}건을 "
+                        "spotlight 매칭 컨텍스트로 전달"
+                    )
+                except Exception as e:
+                    logger.warning(f"daily_picks 로드 실패 (매칭 컨텍스트 없이 진행): {e}")
+
             # ── 캐시 우선 — 같은 date_str 재실행 시 LLM 재호출 회피 ──
             cached_meta_path = f"{report_path}/meta.json"
             cached = None
@@ -278,11 +294,30 @@ async def main(mode: str = "daily"):
             if cached is None:
                 try:
                     headline, deck, spotlight, additional_picks, summary, keywords, categories = await generate_summary_and_keywords(
-                        youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content
+                        youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content,
+                        daily_picks=available_daily_picks if mode == "weekly" else None,
                     )
                     # LLM이 생성한 spotlight/picks URL 실제 접근 가능 여부 검증.
                     # 404/접속 불가 URL은 비워서(""), publisher가 외부 링크 대신 텍스트만 노출.
                     spotlight, additional_picks = await _validate_pick_urls(spotlight, additional_picks)
+                    # weekly 한정 — spotlight.related_daily가 실제 daily_picks에
+                    # 존재하는 date_str인지 검증. 매칭 실패는 None으로 정규화.
+                    if mode == "weekly" and isinstance(spotlight, dict):
+                        rd_raw = spotlight.get("related_daily")
+                        rd = None
+                        if isinstance(rd_raw, str):
+                            rd_clean = rd_raw.strip().strip('"').strip("'")
+                            if rd_clean and rd_clean.lower() not in ("null", "none", ""):
+                                if any(p.get("date_str") == rd_clean for p in available_daily_picks):
+                                    rd = rd_clean
+                                else:
+                                    logger.warning(
+                                        f"spotlight.related_daily='{rd_clean}'가 "
+                                        "daily_picks에 없음 — null로 정규화"
+                                    )
+                        spotlight["related_daily"] = rd
+                        if rd:
+                            logger.info(f"weekly spotlight ↔ daily {rd} 매칭됨")
                 except Exception as e:
                     logger.error(f"요약/키워드 생성 실패: {e}")
                     additional_picks = []
@@ -443,9 +478,9 @@ async def evaluate_post_relevance(title):
 
 위 점수 중 하나만 숫자로 응답해주세요. 다른 텍스트나 설명은 포함하지 마세요."""
 
-        client = AsyncAnthropic()
+        client = make_async_client()
         response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=resolve_model("claude-haiku-4-5-20251001"),
             max_tokens=8,
             temperature=0.1,
             messages=[{"role": "user", "content": prompt}],
@@ -480,11 +515,11 @@ async def translate_content(content):
 
 번역된 내용만 반환해주세요."""
 
-        client = AsyncAnthropic()
+        client = make_async_client()
         logger.info(f"Anthropic API 호출 중... ({title[:30]}...)")
 
         response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=resolve_model("claude-haiku-4-5-20251001"),
             max_tokens=2000,
             temperature=0.3,
             messages=[{"role": "user", "content": prompt}],
@@ -647,9 +682,9 @@ async def summarize_combined_insights(
 
 (2~4개)"""
 
-        client = Anthropic()
+        client = make_client()
         message = client.messages.create(
-            model="claude-opus-4-7",
+            model=resolve_model("claude-opus-4-7"),
             max_tokens=15000,
             messages=[{
                 "role": "user",
@@ -758,12 +793,45 @@ async def _validate_pick_urls(
     return spotlight, valid_picks
 
 
-async def generate_summary_and_keywords(youtube_content, reddit_insights, github_content="", ai_blogs_content="", bluesky_content=""):
-    """수집된 콘텐츠를 기반으로 전체 요약과 키워드를 생성합니다."""
+async def generate_summary_and_keywords(youtube_content, reddit_insights, github_content="", ai_blogs_content="", bluesky_content="", daily_picks: list[dict] | None = None):
+    """수집된 콘텐츠를 기반으로 전체 요약과 키워드를 생성합니다.
+
+    daily_picks: weekly 모드에서 LLM이 spotlight ↔ 기존 daily knowledge 매칭을
+    의미 기반으로 판단하도록 전달하는 최근 daily picks 컨텍스트.
+    각 항목은 home_state.json의 daily_picks 구조: date_str, title, url, summary, categories.
+    """
     logger.info("요약 및 키워드 생성 시작")
 
     # 카테고리 vocabulary block — LLM이 정확히 옮길 수 있도록 명시.
     category_vocab_block = "\n".join(f"   - {c}" for c in CATEGORY_VOCABULARY)
+
+    # weekly 모드용 — 이번 주 daily picks 목록을 LLM에 노출해 spotlight와
+    # 의미 기반 매칭을 시킨다. 매칭되면 publisher가 그 knowledge_url로 CTA를 건다.
+    daily_picks_block = ""
+    if daily_picks:
+        lines = []
+        for p in daily_picks:
+            ds = p.get("date_str", "")
+            t = (p.get("title") or "").strip()
+            u = (p.get("url") or "").strip()
+            s = (p.get("summary") or "").strip()
+            cats = p.get("categories") or []
+            cat_str = ", ".join(cats) if cats else "—"
+            lines.append(
+                f"- date_str={ds} | categories=[{cat_str}]\n"
+                f"  title: {t}\n"
+                f"  url: {u}\n"
+                f"  summary: {s}"
+            )
+        daily_picks_block = (
+            "\n\n## 이번 주 daily picks (이미 /knowledge/<date_str>/에 발행됨)\n\n"
+            "spotlight를 선정할 때 아래 목록과 **같은 결의 자료**(같은 저장소·같은 글·같은 주제 심화)라면, "
+            "응답의 `related_daily` 필드에 그 항목의 date_str을 정확히 옮겨 적으세요. "
+            "URL이 달라도 본질이 같은 메타글·인용글이라면 매칭으로 봐도 됩니다. "
+            "매칭되는 항목이 없으면 `related_daily: null`로 두세요.\n\n"
+            + "\n\n".join(lines)
+            + "\n"
+        )
 
     # 요약을 위한 프롬프트 생성
     prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, YouTube 영상, Bluesky 버즈 자료입니다. 이를 바탕으로 아래 기준에 따라 정리해주세요.
@@ -784,7 +852,7 @@ async def generate_summary_and_keywords(youtube_content, reddit_insights, github
 
 ==== Bluesky 버즈 (주요 AI 인물 단문, X 대체) ====
 {bluesky_content[:2500]}
-
+{daily_picks_block}
 ## 사용자 프로젝트 컨텍스트 (Spotlight 작성 시 활용)
 
 사용자(쿠키, F&F)는 아래 **두 메인 프로젝트**를 동시 진행 중입니다.
@@ -832,6 +900,7 @@ ai_news_agent는 보조 후보입니다.
    - url: 자료에 등장한 URL (절대 임의 생성 금지)
    - why: 왜 주목할 만한지 1~2문장. 위 컨텍스트(agent loop · HITL · MCP host/client · 멀티브랜드 yaml 주입 · Activity Log/Observer · Quest · FSD · server-only · Claude Code plugin 등) 중 어느 결을 건드리는지 한 번은 명시.
    - application: 접목 대상 프로젝트(DCSAI / Team Agent / ai_news_agent 중 하나)와 구체 모듈·단계를 짚어 1~2문장. 예: "DCSAI agent loop의 HITL 분기에 ~", "Team Agent `discovery-core-agent`의 Workflow HTML 파싱 단계에 ~", "ai_news_agent 요약 프롬프트에 ~".
+   - related_daily: "이번 주 daily picks" 섹션이 위에 있는 경우, 그 중 같은 결의 항목이 있으면 그 date_str을 정확히 옮겨 적고, 없으면 null. 섹션 자체가 없으면 (daily 모드) 필드 자체를 생략해도 됩니다.
 
 3. **additional_picks (0~2개)** — spotlight 다음으로 의미 있는 자료 0~2개. "꼭 읽어보세요" 톤으로 가볍게.
    - spotlight와 **중복 금지**(같은 URL/같은 저장소/같은 글 X).
@@ -858,7 +927,8 @@ ai_news_agent는 보조 후보입니다.
     "title": "...",
     "url": "https://...",
     "why": "...",
-    "application": "..."
+    "application": "...",
+    "related_daily": "YYYYMMDD or null"
   }},
   "additional_picks": [
     {{ "title": "...", "url": "https://...", "summary": "..." }}
@@ -869,9 +939,9 @@ ai_news_agent는 보조 후보입니다.
 
     try:
         # Claude API 호출
-        client = Anthropic()
+        client = make_client()
         response = client.messages.create(
-            model="claude-opus-4-7",
+            model=resolve_model("claude-opus-4-7"),
             max_tokens=6000,
             system="너는 AI 뉴스 분석과 요약을 전문으로 하는 Assistant입니다. 주어진 콘텐츠에서 핵심 내용을 파악하고 출처 링크를 포함해 정확하게 요약합니다. 응답은 항상 단일 JSON 객체여야 합니다.",
             messages=[{"role": "user", "content": prompt}]

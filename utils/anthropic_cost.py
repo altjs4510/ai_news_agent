@@ -55,6 +55,9 @@ def _fetch_cost_usd(starting_at: datetime, ending_at: datetime) -> float | None:
 
 
 def slack_summary() -> str:
+    # Bedrock 모드: 비용은 AWS Cost Explorer 영역. Anthropic Admin API는 $0만 반환.
+    if os.getenv("USE_BEDROCK", "").strip() in ("1", "true", "yes"):
+        return "사용 비용: (Bedrock 모드 — AWS Cost Explorer 확인)"
     if not ADMIN_KEY:
         return "사용 비용: (ANTHROPIC_ADMIN_KEY 미설정)"
 

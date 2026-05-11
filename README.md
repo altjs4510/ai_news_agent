@@ -11,6 +11,7 @@ AI 동향을 다양한 소스에서 자동 수집·번역·요약·인사이트�
 - **2-tier 발행 모드**:
   - **Daily** (화~일 23:30 KST): 24h raw → spotlight 1개 + 학습 노트 1편을 `/knowledge/YYYYMMDD/`에 발행
   - **Weekly** (월요일 06:00 KST): 지난주 월~일 7일치 → 헤드라인+전체요약+spotlight+picks를 `/posts/YYYYMMDD/`에 발행
+- **Weekly ↔ Daily knowledge 매칭**: weekly LLM 프롬프트에 같은 주 daily picks를 컨텍스트로 주고, `spotlight.related_daily`(매칭된 daily date_str 또는 null)로 응답받아 TODAY'S PICK "자세히 보기 →" CTA를 그 daily knowledge 페이지로 연결
 - **자동 URL 검증**: LLM이 생성한 spotlight/additional_picks URL을 HEAD 요청으로 사전 검증 (404 제거)
 - **자동 키워드 생성**: 수집된 콘텐츠에서 중요 키워드 추출
 - **블로그 자동 발행**: 결과 마크다운을 별도 ai_news_blog 레포에 commit·push → GitHub Actions가 Hugo로 빌드해 Pages에 배포
@@ -70,6 +71,14 @@ REDDIT_CLIENT_ID=your_reddit_client_id
 REDDIT_CLIENT_SECRET=your_reddit_client_secret
 REDDIT_USER_AGENT=your_reddit_user_agent
 
+# --- LLM 백엔드 전환: Anthropic API 대신 AWS Bedrock 사용 (옵션) ---
+# USE_BEDROCK=1                                # 1이면 AnthropicBedrock 클라이언트로 라우팅, 비우면 기본 Anthropic API
+# AWS_REGION=ap-northeast-2                    # Bedrock 리전 (또는 us-east-1 등)
+# AWS_BEARER_TOKEN_BEDROCK=ABSKxxxxx           # Bedrock API key (또는 표준 AWS 자격 증명 사용)
+# BEDROCK_MODEL_OPUS_4_7=global.anthropic.claude-opus-4-7-v1:0       # 기본값 오버라이드 시
+# BEDROCK_MODEL_SONNET_4_6=global.anthropic.claude-sonnet-4-6-v1:0
+# BEDROCK_MODEL_HAIKU_4_5=global.anthropic.claude-haiku-4-5-v1:0
+
 # --- 블로그 발행 (필수, ai_news_blog 레포가 같은 부모 디렉토리에 clone되어 있다고 가정) ---
 # BLOG_REPO_PATH=/absolute/path/to/ai_news_blog   # 기본값: ../ai_news_blog
 # BLOG_SITE_URL=https://altjs4510.github.io/ai_news_blog
@@ -111,11 +120,14 @@ cd ai_news_agent
 
 필요한 secrets (Repo Settings → Secrets and variables → Actions):
 
-- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_API_KEY` — Anthropic API 사용 시 (Bedrock 미사용 모드)
+- `USE_BEDROCK` — `1`로 설정하면 AWS Bedrock 경유 (Anthropic API key 대신 사용)
+- `AWS_REGION` — Bedrock 리전 (e.g. `ap-northeast-2`)
+- `AWS_BEARER_TOKEN_BEDROCK` — Bedrock 인증 토큰 (또는 표준 AWS 자격 증명)
 - `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`
 - `BLOG_PUSH_TOKEN` — ai_news_blog 레포에 push 권한이 있는 PAT
 - `SLACK_WEBHOOK_URL` (옵션, 실패 알림)
-- `ANTHROPIC_ADMIN_KEY` (옵션, sk-ant-admin01-… — 설정하면 Slack 실패 알림에 오늘/이번달 Anthropic 사용 비용을 함께 표시)
+- `ANTHROPIC_ADMIN_KEY` (옵션, sk-ant-admin01-… — 설정하면 Slack 실패 알림에 오늘/이번달 Anthropic 사용 비용을 함께 표시. Bedrock 모드에서는 AWS Cost Explorer를 사용하므로 무시됨)
 
 ### 로컬 수동 실행 (디버깅용)
 ```bash

@@ -20,10 +20,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from anthropic import Anthropic
-
 from main import CATEGORY_VOCABULARY
 from delivery.blog_publisher import BlogPublisher
+from utils.llm_client import make_client, resolve_model
 from utils.logger import setup_logger
 
 logger = setup_logger("curate")
@@ -63,7 +62,7 @@ def _strip_frontmatter(text: str) -> str:
     return text[end + 4 :].lstrip()
 
 
-async def _classify(client: Anthropic, title: str, body_excerpt: str) -> list[str]:
+async def _classify(client, title: str, body_excerpt: str) -> list[str]:
     vocab_block = "\n".join(f"- {c}" for c in CATEGORY_VOCABULARY)
     prompt = f"""다음 학습 노트를 아래 vocabulary에서 정확히 1개 카테고리로 분류하세요.
 새 단어 만들지 말고 vocabulary에서 정확히 그대로 옮겨 적으세요.
@@ -81,7 +80,7 @@ async def _classify(client: Anthropic, title: str, body_excerpt: str) -> list[st
 {{"categories": ["..."]}}
 """
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model=resolve_model("claude-sonnet-4-6"),
         max_tokens=200,
         system=(
             "너는 기술 콘텐츠 분류 전문가다. 주어진 학습 노트를 고정된 카테고리 vocabulary에서 "
@@ -134,7 +133,7 @@ async def main() -> int:
         logger.info("학습 노트가 없어 curation 스킵")
         return 0
 
-    client = Anthropic()
+    client = make_client()
     changes: list[dict] = []
     cat_counter: dict[str, int] = {}
 
