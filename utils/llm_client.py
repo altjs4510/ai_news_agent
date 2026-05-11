@@ -22,9 +22,9 @@ from typing import Any
 # inference profile 접두사(global./us./apac.)는 리전/계정 권한에 따라 조정 필요.
 # env var로 오버라이드 가능.
 _BEDROCK_DEFAULTS: dict[str, str] = {
-    "claude-opus-4-7": "global.anthropic.claude-opus-4-7-v1:0",
-    "claude-sonnet-4-6": "global.anthropic.claude-sonnet-4-6-v1:0",
-    "claude-haiku-4-5-20251001": "global.anthropic.claude-haiku-4-5-v1:0",
+    "claude-opus-4-7": "global.anthropic.claude-opus-4-7",
+    "claude-sonnet-4-6": "global.anthropic.claude-sonnet-4-6",
+    "claude-haiku-4-5-20251001": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
 }
 
 _BEDROCK_ENV_OVERRIDES: dict[str, str] = {
