@@ -242,22 +242,27 @@ async def main(mode: str = "daily"):
         additional_picks: list[dict] = []
         categories: list[str] = []
         if ENABLE_BLOG or ENABLE_NOTION:
-            # weekly 모드는 같은 주 daily picks를 LLM 컨텍스트로 줘서 spotlight와
-            # 의미 기반 매칭을 시킨다. 결과 spotlight["related_daily"]가 매칭된
-            # daily knowledge의 date_str이면 publisher가 그 페이지로 CTA를 건다.
+            # daily/weekly 양쪽 모두 home_state.json의 daily_picks를 LLM에 전달.
+            # - daily: 최근 14일 픽을 "다시 고르지 마라(dedup)" 컨텍스트로 사용.
+            #   같은 URL/저장소가 매주 spotlight로 재선정되던 문제 차단.
+            # - weekly: 같은 주 daily picks를 "spotlight와 의미 기반 매칭" 컨텍스트로 사용.
+            #   매칭 시 spotlight.related_daily에 date_str이 박혀 CTA 링크가 걸린다.
             # daily_picks는 blog repo의 home_state.json에 누적된다.
             available_daily_picks: list[dict] = []
-            if mode == "weekly" and ENABLE_BLOG:
+            if ENABLE_BLOG:
                 try:
                     _pub_for_state = BlogPublisher()
                     _state = _pub_for_state._load_state()
                     available_daily_picks = _state.get("daily_picks") or []
+                    if mode == "daily":
+                        # 최근 14일치만 dedup 신호로 사용 (그 이전은 사실상 freshness 만료)
+                        available_daily_picks = available_daily_picks[-14:]
                     logger.info(
-                        f"weekly 모드 — daily picks {len(available_daily_picks)}건을 "
-                        "spotlight 매칭 컨텍스트로 전달"
+                        f"{mode} 모드 — daily picks {len(available_daily_picks)}건을 "
+                        f"{'dedup' if mode == 'daily' else '매칭'} 컨텍스트로 전달"
                     )
                 except Exception as e:
-                    logger.warning(f"daily_picks 로드 실패 (매칭 컨텍스트 없이 진행): {e}")
+                    logger.warning(f"daily_picks 로드 실패 (컨텍스트 없이 진행): {e}")
 
             # ── 캐시 우선 — 같은 date_str 재실행 시 LLM 재호출 회피 ──
             cached_meta_path = f"{report_path}/meta.json"
@@ -295,7 +300,8 @@ async def main(mode: str = "daily"):
                 try:
                     headline, deck, spotlight, additional_picks, summary, keywords, categories = await generate_summary_and_keywords(
                         youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content,
-                        daily_picks=available_daily_picks if mode == "weekly" else None,
+                        daily_picks=available_daily_picks or None,
+                        mode=mode,
                     )
                     # LLM이 생성한 spotlight/picks URL 실제 접근 가능 여부 검증.
                     # 404/접속 불가 URL은 비워서(""), publisher가 외부 링크 대신 텍스트만 노출.
@@ -793,20 +799,22 @@ async def _validate_pick_urls(
     return spotlight, valid_picks
 
 
-async def generate_summary_and_keywords(youtube_content, reddit_insights, github_content="", ai_blogs_content="", bluesky_content="", daily_picks: list[dict] | None = None):
+async def generate_summary_and_keywords(youtube_content, reddit_insights, github_content="", ai_blogs_content="", bluesky_content="", daily_picks: list[dict] | None = None, mode: str = "daily"):
     """수집된 콘텐츠를 기반으로 전체 요약과 키워드를 생성합니다.
 
-    daily_picks: weekly 모드에서 LLM이 spotlight ↔ 기존 daily knowledge 매칭을
-    의미 기반으로 판단하도록 전달하는 최근 daily picks 컨텍스트.
-    각 항목은 home_state.json의 daily_picks 구조: date_str, title, url, summary, categories.
+    daily_picks: home_state.json의 누적 daily picks. mode에 따라 LLM 지시가 다르다.
+      - mode="daily": 최근 14일 픽 — **다시 선정 금지**(dedup) 컨텍스트.
+      - mode="weekly": 같은 주 픽 — spotlight ↔ daily knowledge **의미 매칭** 컨텍스트.
+    각 항목은 date_str, title, url, summary, categories.
     """
     logger.info("요약 및 키워드 생성 시작")
 
     # 카테고리 vocabulary block — LLM이 정확히 옮길 수 있도록 명시.
     category_vocab_block = "\n".join(f"   - {c}" for c in CATEGORY_VOCABULARY)
 
-    # weekly 모드용 — 이번 주 daily picks 목록을 LLM에 노출해 spotlight와
-    # 의미 기반 매칭을 시킨다. 매칭되면 publisher가 그 knowledge_url로 CTA를 건다.
+    # 모드에 따라 daily_picks 블록 의미가 다르다.
+    # - daily: 최근 14일 픽 → "다시 선정 금지"(dedup) 신호
+    # - weekly: 같은 주 픽 → spotlight ↔ daily knowledge 의미 매칭 신호
     daily_picks_block = ""
     if daily_picks:
         lines = []
@@ -823,15 +831,32 @@ async def generate_summary_and_keywords(youtube_content, reddit_insights, github
                 f"  url: {u}\n"
                 f"  summary: {s}"
             )
-        daily_picks_block = (
-            "\n\n## 이번 주 daily picks (이미 /knowledge/<date_str>/에 발행됨)\n\n"
-            "spotlight를 선정할 때 아래 목록과 **같은 결의 자료**(같은 저장소·같은 글·같은 주제 심화)라면, "
-            "응답의 `related_daily` 필드에 그 항목의 date_str을 정확히 옮겨 적으세요. "
-            "URL이 달라도 본질이 같은 메타글·인용글이라면 매칭으로 봐도 됩니다. "
-            "매칭되는 항목이 없으면 `related_daily: null`로 두세요.\n\n"
-            + "\n\n".join(lines)
-            + "\n"
-        )
+        if mode == "weekly":
+            daily_picks_block = (
+                "\n\n## 이번 주 daily picks (이미 /knowledge/<date_str>/에 발행됨)\n\n"
+                "spotlight를 선정할 때 아래 목록과 **같은 결의 자료**(같은 저장소·같은 글·같은 주제 심화)라면, "
+                "응답의 `related_daily` 필드에 그 항목의 date_str을 정확히 옮겨 적으세요. "
+                "URL이 달라도 본질이 같은 메타글·인용글이라면 매칭으로 봐도 됩니다. "
+                "매칭되는 항목이 없으면 `related_daily: null`로 두세요.\n\n"
+                + "\n\n".join(lines)
+                + "\n"
+            )
+        else:
+            # daily — dedup 신호. 같은 URL/저장소/같은 결의 메타글까지 회피.
+            daily_picks_block = (
+                "\n\n## 최근 14일 daily picks (이미 발행됨 — **재선정 금지**)\n\n"
+                "아래는 최근 14일간 daily spotlight으로 이미 나간 항목입니다. "
+                "오늘의 spotlight는 아래와 **명확히 다른 항목**이어야 합니다.\n\n"
+                "**Dedup 규칙 (반드시 지킬 것):**\n"
+                "1. 같은 URL을 다시 고르지 마세요.\n"
+                "2. 같은 GitHub 저장소(같은 owner/repo)를 다시 고르지 마세요. 같은 저장소의 다른 페이지(README, releases, blog post)도 회피.\n"
+                "3. 같은 글의 메타·인용·번역·요약본도 회피 (예: 같은 블로그 글에 대한 다른 매체 보도).\n"
+                "4. 같은 \"결\"(예: \"Claude Code skills 디렉토리 공유 레포\", \"MCP 서버 카탈로그\", \"agent skills 모음\" 같은 evergreen 도구 카테고리)이 위 목록에 이미 2회 이상 등장했다면, **다른 결의 항목**을 고르세요.\n"
+                "5. dedup 때문에 후보가 약해 보여도, 위 목록에 없는 새 항목을 우선하세요. 약한 후보를 spotlight로 올리는 것이 중복보다 낫습니다.\n\n"
+                "최근 14일 픽 목록:\n\n"
+                + "\n\n".join(lines)
+                + "\n"
+            )
 
     # 요약을 위한 프롬프트 생성
     prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, YouTube 영상, Bluesky 버즈 자료입니다. 이를 바탕으로 아래 기준에 따라 정리해주세요.
@@ -894,8 +919,16 @@ ai_news_agent는 보조 후보입니다.
    메타 표현("이번 호는~", "오늘 우리는~") 금지. 사실에 기반한 압축 표현.
 
 2. **spotlight (1개만)** — 자료 중에서 사용자가 직접 PoC/공부하면 가장 도움이 될 항목 1개를 선정하세요.
-   우선순위: **DCSAI 또는 Team Agent에 곧장 접목 가능한 항목 > AI 에이전트/MCP/멀티에이전트 학습 가치가 큰 항목 > ai_news_agent 개선용 항목**.
-   단순 모델 발표/벤치마크 뉴스보다, 코드·아키텍처·도구·오픈소스를 우선 고르세요.
+
+   **우선순위 (반드시 이 순서로 평가):**
+   1. **Freshness (1순위)** — 이번 윈도우에 **새로 등장**한 항목을 우선. 같은 결의 evergreen 항목(예: 또 다른 "Claude Code skills 디렉토리 공유 레포", "agent skills 모음", "MCP 서버 카탈로그" 류)이 최근에 반복 등장했다면 회피. **이 룰은 다른 모든 기준을 압도합니다.**
+   2. **버즈/주목도 (2순위)** — 같은 freshness 안에서, 이번 주에 실제로 화제가 되고 있는 항목(GitHub Trending 상위, Reddit/HN 댓글 폭주, 공식 블로그 발표, 주요 인물 언급)을 우선.
+   3. **사용자 접목성 (3순위, tiebreaker)** — freshness·버즈가 비슷한 후보가 여러 개면, DCSAI 또는 Team Agent에 접목 가능한 항목을 우선. 단, "내 프로젝트와 안 맞으니까 제외"는 금지 — 접목성은 동점 후보 사이의 가산점일 뿐, 컷오프 기준이 아닙니다.
+   4. **포맷 선호 (4순위)** — 같은 점수면 단순 모델 발표/벤치마크 뉴스보다 코드·아키텍처·도구·오픈소스를 우선.
+
+   **재선정 회피 (daily 모드 한정):** 위에 "최근 14일 daily picks" 섹션이 있는 경우, 그 섹션의 dedup 규칙을 모두 따르세요. 약한 후보가 중복보다 낫습니다.
+
+   **spotlight 항목 구조:**
    - title: 항목 이름 (저장소·제품·기능·블로그 글 제목 등)
    - url: 자료에 등장한 URL (절대 임의 생성 금지)
    - why: 왜 주목할 만한지 1~2문장. 위 컨텍스트(agent loop · HITL · MCP host/client · 멀티브랜드 yaml 주입 · Activity Log/Observer · Quest · FSD · server-only · Claude Code plugin 등) 중 어느 결을 건드리는지 한 번은 명시.
