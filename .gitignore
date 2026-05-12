@@ -39,3 +39,7 @@ uv.lock
 
 # 임시 크론 설정 파일들
 current_cron
+
+# Claude Code · bkit local state (runtime locks, audit logs, snapshots, etc.)
+.claude/
+.bkit/
