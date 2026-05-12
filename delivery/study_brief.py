@@ -2,8 +2,9 @@
 
 큐레이션이 '무엇을 볼지' 정해주는 단계라면, study brief는
 그 자료를 '오늘 바로 공부할 수 있게' 다듬는 단계다.
-DCSAI / Team Agent 컨텍스트와 함께 Claude에 던져
-정의·핵심 개념·구조·접목 방향·핵심 단락 번역까지 정리한다.
+한 페이지에 두 결을 함께 싣는다:
+  - 입문 가이드(풀어쓴 정리) — 비전공자·기획자도 이해할 수 있게 비유와 일상어 위주.
+  - 원문 전체 번역(정독용) — 정확한 워딩이 필요할 때 보는 용도.
 """
 
 import re
@@ -15,22 +16,6 @@ from utils.logger import setup_logger
 logger = setup_logger("study_brief")
 
 UA = "Mozilla/5.0 (compatible; ai-news-agent/0.1)"
-
-# 사용자 메인 프로젝트 컨텍스트 — 접목 섹션에서 구체 모듈명을 짚도록.
-# main.py의 spotlight 컨텍스트와 같은 결.
-USER_CONTEXT = """\
-사용자(쿠키, F&F)는 두 메인 프로젝트를 진행 중.
-
-A. DCSAI (`dcs-ai-project`) — Next.js 15(Turbopack) + NestJS + PostgreSQL/Snowflake/Neo4j.
-   Anthropic SDK 직통합으로 agent loop · HITL · HTTP chunked streaming, MCP host server 자체 구현.
-   Frontend FSD, Microsoft SSO + JWT. 부속군: dcs-ai-cli(Rust), dcs-ai-plugin(Claude Code), ff-claude-manager(Tauri 2).
-
-B. Team Agent (`gtm-agent-poc`) — F&F Discovery 사업부 GTM AI 에이전트 플랫폼.
-   Goal 2축: Build(업무·기술 하네스) + Operate(사람 전환·가치 회수).
-   `discovery-core-agent`(브랜드) ↔ `platform-core-agent`(크로스 브랜드) 계층, dcsai KG MCP 직연결,
-   브랜드별 yaml 주입(brand.yaml), Activity Log/Observer 피드백 루프(L1~L4),
-   Quest 3계층(전체·파티·플레이어). Next.js 15 App Router · FSD · server-only.
-"""
 
 
 async def fetch_article_text(url: str, max_chars: int = 30000) -> str:
@@ -60,23 +45,22 @@ async def fetch_article_text(url: str, max_chars: int = 30000) -> str:
 
 
 async def _generate_structured_brief(spotlight: dict, raw_text: str) -> str | None:
-    """Opus로 정리(구조화) 부분만 생성 — 분석·접목·핵심 개념표 등."""
+    """Opus로 입문 가이드(풀어쓴 정리)를 생성한다.
+
+    번역본이 '정확한 워딩' 담당이라면, 이 섹션은 정반대 결 —
+    비전공자·기획자도 이해할 수 있도록 비유와 일상어로 풀어쓴다.
+    """
     title = (spotlight.get("title") or "").strip()
     url = (spotlight.get("url") or "").strip()
     why = (spotlight.get("why") or "").strip()
-    application = (spotlight.get("application") or "").strip()
 
-    prompt = f"""다음은 사용자 쿠키가 이번 주에 깊이 공부할 단 하나의 자료입니다.
-**정리(structured brief)** 부분만 작성하세요. 원문 전체 번역은 다른 단계에서 별도로 진행됩니다.
+    prompt = f"""다음 자료를 처음 보는 사람(비전공자·기획자 포함)도 이해할 수 있도록 한국어로 풀어쓴 **입문 가이드**를 작성하세요.
+이 응답의 목적은 입문 가이드이지 원문 번역이 아닙니다. 원문 전체 번역은 다른 단계에서 별도로 진행됩니다.
 
-## 큐레이션 메모
+## 큐레이션 메모 (글의 결을 잡는 참고용 — 본문에 그대로 인용하지 마세요)
 - 제목: {title}
 - 원문 URL: {url}
 - 왜 주목: {why}
-- 접목 방향: {application}
-
-## 사용자 컨텍스트
-{USER_CONTEXT}
 
 ## 원문 본문 (HTML 정제 후, 최대 30K자)
 {raw_text}
@@ -84,32 +68,30 @@ async def _generate_structured_brief(spotlight: dict, raw_text: str) -> str | No
 ## 작성 규칙
 1. 출력은 순수 마크다운. ``` 코드블록으로 전체를 감싸지 마세요.
 2. 본문에 등장한 [텍스트](URL) 링크는 그대로 인용. 자료에 없는 URL은 절대 만들지 마세요.
-3. 단락은 2~3문장. 핵심 단어·제품명·개념은 **굵게**.
-4. 인사말·결론 멘트 금지. **번역 섹션 만들지 마세요(다른 단계에서 처리).**
-5. 다음 섹션 순서를 그대로 사용:
+3. **톤** — 친한 동료에게 차근차근 설명하는 결. "전문가가 강의하는" 결 금지. 단정·과시 톤 금지.
+4. **용어** — 영문 기술 용어가 나오면 반드시 한국어로 먼저 풀어 설명한 뒤 괄호로 영문을 병기. 첫 등장 한 번만. 예: "지식 그래프(knowledge graph)". 풀어쓰기 어려운 고유명사·제품명은 그대로 두되 한 줄 설명을 붙이세요.
+5. **밀도** — 한 단락은 2~4문장. dense한 표·항목 나열 금지(섹션 5의 용어 풀이만 예외). 풀어쓴 문장을 우선하세요.
+6. 인사말·결론 멘트·"오늘은 ~을 살펴보겠습니다" 같은 머리말 금지. 사용자 개인 프로젝트나 사내 컨텍스트는 본문에 언급하지 마세요.
+7. 다음 6개 섹션 순서를 그대로 사용:
 
-### 1. 한 줄 정의
-한 문장으로.
+### 1. 한 줄로 말하면
+한두 문장. 비유 또는 일상어로. 영문 용어는 가능한 한 배제.
 
-### 2. 왜 지금 중요한가
-3~5개 bullet. AI 동향 흐름 안에서 어떤 결을 건드리는지.
+### 2. 왜 이게 만들어졌어요?
+어떤 문제·불편이 있어서 이 도구/기법/개념이 등장했는지 배경을 한 단락(3~5문장)으로. "원래는 이렇게 했는데, 이런 문제가 있어서…" 식으로 풀어쓰세요.
 
-### 3. 핵심 개념
-표 형식. | 용어 | 정의 | 비고/관련 키워드 |
+### 3. 비유로 풀면
+"이건 마치 ○○ 같은 거예요" 형식의 비유 1~2개. 동떨어진 비유 말고, 실제 작동 방식의 핵심을 짚는 비유로. 비유 다음에 "그래서 결국…" 한 줄로 비유와 실제를 연결.
 
-### 4. 작동 원리 / 구조
-필요시 mermaid 다이어그램(```mermaid 코드 블록은 허용). 다이어그램이 어색하면 글로.
+### 4. 어떻게 작동하는지 (그림으로)
+mermaid 다이어그램(```mermaid 코드 블록 허용)으로 흐름을 그리되, **노드 레이블은 한국어 풀어쓰기**로. 영문 식별자만 늘어놓지 마세요. 다이어그램 아래에 흐름을 2~3문장으로 풀이. 다이어그램이 어색한 주제면 글로 흐름을 설명해도 됩니다.
 
-### 5. 실제 사용법 / 예시
-원문에 코드·명령·API 호출이 있으면 그대로 인용. 없으면 가상 예시 만들지 말고 "원문에 코드 예시 없음"이라고 적기.
+### 5. 처음 보는 용어 풀이
+원문의 핵심 용어 중 입문자가 막힐 만한 것 5~7개. 다음 형식:
+- **한국어로 풀어쓴 이름 (영문)** — 한두 문장 설명. 무엇을 하는지·왜 필요한지 위주. 더 어려운 용어로 설명하지 마세요.
 
-### 6. 사용자 프로젝트 접목
-구체 모듈/단계명 짚어 2~4 bullet.
-- DCSAI 측: agent loop · HITL 분기 · MCP host · Anthropic SDK · plugins · Tauri 매니저 중 어디에 어떻게.
-- Team Agent 측: discovery-core-agent · platform-core-agent · brand.yaml · Activity Log/Observer · Quest 3계층 · FSD/server-only 중 어디에 어떻게.
-
-### 7. 더 파고들 거리
-원문에 등장한 관련 링크/논문/저장소 2~5개. 본문에 없으면 이 섹션 생략.
+### 6. 한 발 더 들어가고 싶다면
+원문에 등장한 관련 링크/논문/저장소 2~5개. 각 항목 옆에 "이걸 보면 ○○을 알 수 있어요" 식으로 한 줄 안내를 붙이세요. 원문에 그런 링크가 없으면 이 섹션 자체를 생략.
 """
 
     try:
@@ -118,10 +100,12 @@ async def _generate_structured_brief(spotlight: dict, raw_text: str) -> str | No
             model=resolve_model("claude-opus-4-7"),
             max_tokens=6000,
             system=(
-                "너는 단 한 자료를 깊이 학습하도록 돕는 한국어 학습 큐레이터다. "
+                "너는 비전공자·기획자도 한 번에 이해할 수 있도록 풀어 쓰는 한국어 입문 가이드 작성자다. "
                 "원문 텍스트에 등장한 정보만 사용하고 환각하지 않는다. "
-                "사용자의 두 메인 프로젝트(DCSAI / Team Agent) 결에 맞춰 접목 방안을 구체적으로 제시한다. "
-                "원문 전체 번역은 별도 단계에서 처리하므로 이 응답에 포함하지 않는다."
+                "영문 기술 용어는 반드시 한국어로 먼저 풀어 설명한 뒤 (영문)을 병기한다. "
+                "단정·과시 톤을 피하고, 친한 동료에게 차근차근 설명하는 결을 유지한다. "
+                "원문 전체 번역은 별도 단계에서 처리하므로 이 응답에 포함하지 않는다. "
+                "사용자 개인 프로젝트나 사내 컨텍스트는 본문에 언급하지 않는다."
             ),
             messages=[{"role": "user", "content": prompt}],
         )
