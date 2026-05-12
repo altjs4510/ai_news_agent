@@ -444,6 +444,14 @@ class BlogPublisher:
         # 호환 인자 has_study는 무시.
         study_body = ""
         study_url_path: str | None = None
+        # spotlight.related_daily가 같은 주 daily knowledge의 date_str(YYYYMMDD)이면
+        # spotlight CTA를 그 페이지로 건다. LLM이 의미 기반 매칭으로 채워준 값이고,
+        # main 호출 측에서 daily_picks 존재 여부를 이미 검증한 상태.
+        spotlight_detail_url: str | None = None
+        if isinstance(spotlight, dict):
+            rd = spotlight.get("related_daily")
+            if isinstance(rd, str) and rd.strip():
+                spotlight_detail_url = f"knowledge/{rd.strip()}/"
 
         # 키워드를 Hugo taxonomy(tags)에 노출 → /tags/<keyword>/ 자동 생성
         # 백틱(`...`)이 붙은 키워드는 벗기고, 양옆 공백 정리
@@ -494,6 +502,7 @@ class BlogPublisher:
             study_url_path=study_url_path,
             additional_picks=additional_picks,
             hero_html=post_hero,
+            spotlight_detail_url=spotlight_detail_url,
         )
         raw_link_block = (
             '\n<p class="ai-post-raw">'
@@ -740,6 +749,7 @@ class BlogPublisher:
         additional_picks: list[dict] | None = None,
         hero_html: str | None = None,
         deck: str | None = None,
+        spotlight_detail_url: str | None = None,
     ) -> str:
         """홈/포스트 상세 공용 본문(프론트매터 제외) 생성. 모든 내부 링크는 site_url
         절대 경로로 — / 와 /posts/<date>/ 양쪽에서 동일하게 동작하기 위함.
@@ -782,13 +792,21 @@ class BlogPublisher:
                 "</section>\n\n"
             )
 
-        # spotlight pick의 사이트 내 상세 페이지 = 그날의 knowledge note.
-        # study_url_path가 있으면 absolute URL로 변환해 spotlight CTA에 연결.
-        spotlight_detail_url = (
-            f"{site}/{study_url_path}" if study_url_path else None
-        )
+        # spotlight pick의 사이트 내 상세 페이지 링크.
+        # 우선순위: 명시적 spotlight_detail_url(weekly의 related_daily 매칭) >
+        # study_url_path(daily 모드의 같은 날 knowledge note).
+        if spotlight_detail_url:
+            resolved_spotlight_detail = (
+                spotlight_detail_url
+                if spotlight_detail_url.startswith("http")
+                else f"{site}/{spotlight_detail_url.lstrip('/')}"
+            )
+        elif study_url_path:
+            resolved_spotlight_detail = f"{site}/{study_url_path}"
+        else:
+            resolved_spotlight_detail = None
         spotlight_html = self._build_spotlight_html(
-            spotlight, detail_url=spotlight_detail_url
+            spotlight, detail_url=resolved_spotlight_detail
         )
         additional_html = self._build_additional_picks_html(additional_picks)
 
@@ -864,6 +882,7 @@ class BlogPublisher:
         study_url_path: str | None = None,
         additional_picks: list[dict] | None = None,
         deck: str | None = None,
+        spotlight_detail_url: str | None = None,
     ) -> None:
         """홈 _index.md 작성. body_text는 combined_insights 본문(요약 callout 중복 회피).
 
@@ -884,6 +903,7 @@ class BlogPublisher:
             study_url_path=study_url_path,
             additional_picks=additional_picks,
             deck=deck,
+            spotlight_detail_url=spotlight_detail_url,
         )
         footer_marker = '<footer class="ai-home-footer">'
         if footer_marker in full_body:
@@ -994,15 +1014,26 @@ class BlogPublisher:
             "display_date",
             datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d"),
         )
+        spotlight = weekly.get("spotlight") or None
+        # spotlight.related_daily가 있으면 TODAY'S PICK CTA를 그 daily knowledge로 건다.
+        # 매칭 검증은 main에서 끝났고 여기서는 state 신뢰. weekly hero에는 daily용
+        # "📚 오늘의 학습" 보조 CTA가 어울리지 않으므로 study_url_path는 비워두고
+        # spotlight 전용 인자로 전달한다.
+        spotlight_detail_url: str | None = None
+        if isinstance(spotlight, dict):
+            rd = spotlight.get("related_daily")
+            if isinstance(rd, str) and rd.strip():
+                spotlight_detail_url = f"knowledge/{rd.strip()}/"
         self._update_home(
             date_str,
             display_date,
             weekly.get("body", ""),
             headline=weekly.get("headline") or None,
-            spotlight=weekly.get("spotlight") or None,
+            spotlight=spotlight,
             keywords=weekly.get("keywords") or [],
             additional_picks=weekly.get("additional_picks") or [],
             deck=weekly.get("deck") or None,
+            spotlight_detail_url=spotlight_detail_url,
         )
 
     def _git_commit_and_push(self, date_str: str) -> bool:
