@@ -17,31 +17,85 @@ logger = setup_logger("study_brief")
 
 UA = "Mozilla/5.0 (compatible; ai-news-agent/0.1)"
 
+# r.jina.ai readability proxy — Cloudflare/봇 차단 사이트(openai.com 등)를
+# 우회해 깔끔한 마크다운으로 반환. 무료, rate limit 200/min(1일 1회 호출이라 여유).
+# r.jina.ai가 본문 추출까지 해주므로 BeautifulSoup 파싱 불필요.
+JINA_READABILITY_PREFIX = "https://r.jina.ai/"
 
-async def fetch_article_text(url: str, max_chars: int = 30000) -> str:
-    """원문 페이지를 가져와 가독 가능한 본문 텍스트를 반환."""
+
+async def _fetch_via_jina(url: str, max_chars: int) -> str:
+    """r.jina.ai readability proxy로 본문 마크다운을 가져온다.
+
+    응답 첫 줄들은 `Title: ...`, `URL Source: ...`, `Markdown Content:` 메타블록.
+    그 이후가 실제 본문 마크다운.
+    """
+    proxy_url = JINA_READABILITY_PREFIX + url
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                proxy_url,
+                headers={"User-Agent": UA, "Accept": "text/markdown,text/plain,*/*"},
+                timeout=60,
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"jina readability HTTP {resp.status}: {url}")
+                    return ""
+                text = await resp.text()
+    except Exception as e:
+        logger.warning(f"jina readability 요청 실패 ({url}): {e}")
+        return ""
+
+    # 메타블록 제거 — "Markdown Content:" 이후만 본문으로 취급
+    marker = "Markdown Content:"
+    idx = text.find(marker)
+    if idx >= 0:
+        text = text[idx + len(marker):].lstrip()
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text[:max_chars]
+
+
+async def _fetch_direct(url: str, max_chars: int) -> str:
+    """direct aiohttp fetch — 봇 차단 없는 사이트용 fallback."""
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers={"User-Agent": UA}, timeout=40) as resp:
                 if resp.status != 200:
-                    logger.error(f"Study fetch HTTP {resp.status}: {url}")
+                    logger.warning(f"direct fetch HTTP {resp.status}: {url}")
                     return ""
                 html = await resp.text()
     except Exception as e:
-        logger.error(f"Study fetch 실패: {e}", exc_info=True)
+        logger.warning(f"direct fetch 실패 ({url}): {e}")
         return ""
 
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "noscript", "nav", "header", "footer", "aside", "iframe"]):
         tag.decompose()
-
     container = soup.select_one("article") or soup.select_one("main") or soup.body
     if container is None:
         return ""
-
     text = container.get_text(separator="\n", strip=True)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text[:max_chars]
+
+
+async def fetch_article_text(url: str, max_chars: int = 30000) -> str:
+    """원문 페이지를 가져와 가독 가능한 본문 텍스트를 반환.
+
+    1차로 r.jina.ai readability proxy 시도 → Cloudflare/봇 차단 사이트
+    (openai.com 등) 우회 + readability 추출. 실패하면 direct fetch fallback.
+    둘 다 실패하면 빈 문자열 — 학습 브리프 생성 단계에서 자연스럽게 생략됨.
+    """
+    text = await _fetch_via_jina(url, max_chars)
+    if text and len(text) >= 300:
+        logger.info(f"본문 fetch 성공 (jina, {len(text)}자): {url}")
+        return text
+    # jina에서 짧거나 실패했으면 direct fetch 시도
+    text = await _fetch_direct(url, max_chars)
+    if text:
+        logger.info(f"본문 fetch 성공 (direct, {len(text)}자): {url}")
+    else:
+        logger.error(f"본문 fetch 양쪽 실패: {url}")
+    return text
 
 
 async def _generate_structured_brief(spotlight: dict, raw_text: str) -> str | None:
