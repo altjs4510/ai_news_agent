@@ -14,7 +14,18 @@ logger = setup_logger('github_trending')
 # DCSAI / Team Agent 키워드 매칭용 GitHub 토픽 (Search API).
 # github.com/trending 스크래핑은 언어별 인기에만 의존하므로 MCP/agent 생태계 흐름을
 # 놓치기 쉬워, topic 기반 Search API 결과를 함께 수집한다.
-GITHUB_TOPICS = ["mcp-server", "agent", "multi-agent"]
+# Anthropic 진영 외(Nous Research/Hermes Agent 등) 사각지대 보완을 위해 confidence 높은
+# 일반 키워드까지 topic 검색 확장.
+GITHUB_TOPICS = [
+    "mcp-server",
+    "agent",
+    "multi-agent",
+    "ai-agent",
+    "coding-agent",
+    "llm-agent",
+    "autonomous-agent",
+    "agentic-ai",
+]
 
 
 class GitHubTrendingCollector:

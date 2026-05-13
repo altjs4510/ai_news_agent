@@ -32,6 +32,10 @@ BLUESKY_HANDLES = [
     "hardmaru.bsky.social",
     "emilymbender.bsky.social",
     "goodfellow.bsky.social",
+    # Nous Research 진영 — Hermes Agent 등 오픈소스 LLM/agent 담론 (Anthropic 진영 외 사각지대 보완)
+    "teknium1.bsky.social",
+    "nousresearch.bsky.social",
+    "karan4d.bsky.social",
 ]
 
 REDDIT_SUBREDDITS = [

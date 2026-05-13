@@ -47,6 +47,8 @@ DEV_AGENT_FEEDS = [
     ("https://github.com/crewAIInc/crewAI/releases.atom", "CrewAI Releases"),
     ("https://github.com/google/adk-python/releases.atom", "Google ADK Releases"),
     ("https://github.com/openai/openai-agents-python/releases.atom", "OpenAI Agents SDK Releases"),
+    # Nous Research / Hermes Agent — Anthropic 외 오픈소스 LLM/agent 진영 (사각지대 보완)
+    ("https://github.com/NousResearch/hermes-agent/releases.atom", "Hermes Agent Releases"),
     # X 대체 — 큐레이션 뉴스레터 (트위터 담론 압축본)
     ("https://tldr.tech/api/rss/ai", "TLDR AI"),
     ("https://www.therundown.ai/feed", "The Rundown AI"),

@@ -495,10 +495,13 @@ async def evaluate_post_relevance(title):
         raw = response.content[0].text.strip() if response.content else ""
         digits = re.findall(r"[1-5]", raw)
         score = int(digits[0]) if digits else 0
-        is_relevant = score >= 4
-        
+        # 4→3으로 완화: r/LocalLLaMA top 10 중 Hermes Agent 같은 핵심 모델/도구 글이
+        # "3=관련 있으나 중요도 낮음"으로 평가돼 전량 누락되던 사각지대 차단.
+        # 사각지대가 더 큰 비용임 — spotlight LLM이 raw에서 골라낼 기회를 보존.
+        is_relevant = score >= 3
+
         if is_relevant:
-            logger.info(f"✅ 관련성 높음 (점수: {score}): {title}")
+            logger.info(f"✅ 관련성 통과 (점수: {score}): {title}")
         else:
             logger.info(f"❌ 관련성 낮음 (점수: {score}): {title}")
             

@@ -29,7 +29,10 @@ class NewsFeedCollector:
     AI_KEYWORDS = re.compile(
         r"\b(AI|LLM|GPT|Claude|Gemini|Anthropic|OpenAI|agent|MCP|RAG|"
         r"diffusion|transformer|inference|fine-tun|prompt|hugging\s*face|"
-        r"deepmind|mistral|cohere|perplexity|copilot)\b",
+        r"deepmind|mistral|cohere|perplexity|copilot|"
+        # 오픈소스 LLM/agent 진영 — Anthropic 외 사각지대 보완
+        r"hermes|nous\s*research|llama|qwen|deepseek|grok|cursor|"
+        r"openrouter|together|groq|fireworks)\b",
         re.IGNORECASE,
     )
 
@@ -62,13 +65,18 @@ class NewsFeedCollector:
                 return await resp.text()
 
     async def _fetch_hacker_news(self):
-        """HN Algolia search: AI 관련 일주일 내 인기 글."""
+        """HN Algolia search: AI/agent/LLM 관련 일주일 내 인기 글.
+
+        query="AI" 단일 키워드는 "Hermes Agent #1 on OpenRouter" 같은 화제글이
+        본문은 AI인데 제목에 "AI"가 없으면 통째로 누락됨. OR 확장으로 사각지대 차단.
+        Algolia HN search는 query에 multi-term 입력 시 자동 OR 처리.
+        """
         url = "https://hn.algolia.com/api/v1/search"
         params = {
-            "query": "AI",
+            "query": "AI agent LLM",
             "tags": "story",
             "numericFilters": f"created_at_i>{self.cutoff_ts},points>{self.hn_min_points}",
-            "hitsPerPage": str(self.per_source_limit * 3),  # AI 키워드 추가 필터링 위해 여유
+            "hitsPerPage": str(self.per_source_limit * 5),  # OR 확장으로 후보 늘어남, 필터 여유
         }
         try:
             text = await self._get(url, params=params)
