@@ -32,10 +32,9 @@ BLUESKY_HANDLES = [
     "hardmaru.bsky.social",
     "emilymbender.bsky.social",
     "goodfellow.bsky.social",
-    # Nous Research 진영 — Hermes Agent 등 오픈소스 LLM/agent 담론 (Anthropic 진영 외 사각지대 보완)
-    "teknium1.bsky.social",
-    "nousresearch.bsky.social",
-    "karan4d.bsky.social",
+    # 2026-05 시도: teknium1/nousresearch/karan4d 핸들 모두 "Profile not found".
+    # Nous 진영은 여전히 X-only로 추정. GitHub topic 확장이 hermes-agent 캐치를
+    # 대체로 커버하므로 Bluesky 사각지대는 후순위.
 ]
 
 REDDIT_SUBREDDITS = [

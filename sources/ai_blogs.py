@@ -36,7 +36,9 @@ DEV_AGENT_FEEDS = [
     # MCP·agent 본진
     ("https://simonwillison.net/atom/everything/", "Simon Willison"),
     ("https://www.latent.space/feed", "Latent Space"),
-    ("https://blog.langchain.com/rss/", "LangChain Blog"),
+    # LangChain blog RSS는 폐기됨(2026-Q1, /blog/rss → /blog 리다이렉트).
+    # changelog RSS는 살아있어 product release 시그널 캐치 가능.
+    ("https://changelog.langchain.com/feed", "LangChain Changelog"),
     ("https://medium.com/feed/llamaindex-blog", "LlamaIndex Blog"),
     # 코딩 에이전트 비교 (Claude Code plugin/skill/hook 학습)
     ("https://github.com/getcursor/cursor/releases.atom", "Cursor Releases"),
@@ -49,12 +51,11 @@ DEV_AGENT_FEEDS = [
     ("https://github.com/openai/openai-agents-python/releases.atom", "OpenAI Agents SDK Releases"),
     # Nous Research / Hermes Agent — Anthropic 외 오픈소스 LLM/agent 진영 (사각지대 보완)
     ("https://github.com/NousResearch/hermes-agent/releases.atom", "Hermes Agent Releases"),
-    # X 대체 — 큐레이션 뉴스레터 (트위터 담론 압축본)
+    # X 대체 — 큐레이션 뉴스레터 (트위터 담론 압축본).
+    # 2026-05 검증: The Rundown(403)/AlphaSignal(404)/The Batch(404) 피드 폐기됨.
+    # TLDR AI + Ben's Bites + Simon Willison으로도 트위터 담론 24h 내 흡수 충분.
     ("https://tldr.tech/api/rss/ai", "TLDR AI"),
-    ("https://www.therundown.ai/feed", "The Rundown AI"),
-    ("https://alphasignal.ai/feed", "AlphaSignal"),
     ("https://www.bensbites.com/feed", "Ben's Bites"),
-    ("https://www.deeplearning.ai/the-batch/feed/", "Andrew Ng — The Batch"),
     # 개인 엔지니어링 블로그 (고신호)
     ("https://karpathy.bearblog.dev/feed/", "Karpathy"),
     ("https://lilianweng.github.io/index.xml", "Lilian Weng"),
