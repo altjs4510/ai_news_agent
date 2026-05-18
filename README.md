@@ -6,7 +6,7 @@ AI 동향을 다양한 소스에서 자동 수집·번역·요약·인사이트�
 
 ## 주요 기능
 
-- **다중 소스 크롤링**: 공식 AI 블로그(Anthropic·OpenAI·Google), Reddit, GitHub Trending, Hacker News, arxiv, Bluesky 등에서 자동 수집
+- **다중 소스 크롤링**: 공식 AI 블로그(Anthropic news + claude.com/blog · OpenAI · Google), Reddit, GitHub Trending, Hacker News, arxiv, Bluesky 등에서 자동 수집
 - **번역 및 요약**: 영어 콘텐츠를 한글로 번역하고 핵심 내용 요약
 - **2-tier 발행 모드**:
   - **Daily** (화~일 23:30 KST): 24h raw → spotlight 1개 + 학습 노트 1편을 `/knowledge/YYYYMMDD/`에 발행

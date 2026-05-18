@@ -123,6 +123,7 @@ class AIBlogCollector:
         # Meta AI 블로그는 SPA로 server HTML에서 제목 추출이 어려워 임시 보류.
         official_tasks = [
             self._fetch_anthropic(),
+            self._fetch_claude_blog(),
             self._fetch_openai(),
             self._fetch_google(),
             self._fetch_deepmind(),
@@ -308,6 +309,86 @@ class AIBlogCollector:
         logger.info(f"Anthropic Blog 수집 완료: {len(posts)}개")
         return posts
 
+    async def _fetch_claude_blog(self):
+        # Anthropic은 anthropic.com/news와는 별도로 claude.com/blog에 Claude Code
+        # 엔지니어링/practice 글을 따로 올린다 (예: large-codebase best practices,
+        # managed-agents memory, frontend-design skills). RSS는 없어서 HTML 카드 스크래핑.
+        # 페이지에는 marquee(featured)와 blog_cms_grid(main list) 두 섹션이 있는데
+        # 후자가 canonical 목록 — 그쪽을 우선 파싱한다.
+        url = "https://claude.com/blog"
+        try:
+            text = await self._get(url)
+        except Exception as e:
+            logger.error(f"Claude Blog 요청 실패: {e}")
+            return []
+
+        soup = BeautifulSoup(text, "html.parser")
+        date_pat = re.compile(
+            r"(?:January|February|March|April|May|June|July|August|September|"
+            r"October|November|December)\s+\d{1,2},\s+\d{4}"
+        )
+
+        posts = []
+        seen = set()
+        # blog_cms_item이 canonical, marquee_cms_blog_list_item은 동일 글 hero 중복.
+        # 둘 다 훑되 href dedup으로 중복 차단.
+        for card in soup.select("div.blog_cms_item, div.marquee_cms_blog_list_item"):
+            link = card.find(
+                "a", href=lambda h: h and h.startswith("/blog/") and h != "/blog/"
+            )
+            if not link:
+                continue
+            href = link["href"]
+            if href in seen:
+                continue
+            seen.add(href)
+
+            title_el = card.select_one(".card_blog_title")
+            title = title_el.get_text(strip=True) if title_el else ""
+
+            dt = None
+            for cap in card.select(".u-text-style-caption"):
+                m = date_pat.search(cap.get_text(strip=True))
+                if m:
+                    try:
+                        dt = datetime.strptime(m.group(0), "%B %d, %Y").replace(
+                            tzinfo=timezone.utc
+                        )
+                        break
+                    except ValueError:
+                        continue
+            if dt is None:
+                # 마퀴 카드처럼 caption 클래스가 없는 경우 카드 전체 텍스트 fallback
+                m = date_pat.search(card.get_text(separator=" ", strip=True))
+                if m:
+                    try:
+                        dt = datetime.strptime(m.group(0), "%B %d, %Y").replace(
+                            tzinfo=timezone.utc
+                        )
+                    except ValueError:
+                        dt = None
+
+            if dt is None or dt < self.cutoff:
+                continue
+            if not title:
+                # title 셀렉터 실패 시 카드 텍스트에서 date 제거하고 사용
+                blob = card.get_text(separator=" ", strip=True)
+                blob = date_pat.sub(" ", blob)
+                blob = re.sub(r"\bRead more\b", " ", blob)
+                title = re.sub(r"\s+", " ", blob).strip()[:200]
+
+            posts.append({
+                "source": "Claude Blog",
+                "title": title,
+                "url": f"https://claude.com{href}",
+                "published_at": dt.isoformat(),
+                "content": title,
+            })
+            if len(posts) >= self.per_source_limit:
+                break
+
+        logger.info(f"Claude Blog 수집 완료: {len(posts)}개")
+        return posts
 
     async def _fetch_deepmind(self):
         """DeepMind blog (HTML 스크래핑, 날짜 정보 부재 → 최근 게시물 한정)."""
