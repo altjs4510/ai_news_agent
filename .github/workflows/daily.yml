@@ -49,9 +49,6 @@ jobs:
       - name: Run agent (collect → summarize → publish)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          USE_BEDROCK: ${{ secrets.USE_BEDROCK }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
           REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
@@ -91,7 +88,6 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           ANTHROPIC_ADMIN_KEY: ${{ secrets.ANTHROPIC_ADMIN_KEY }}
-          USE_BEDROCK: ${{ secrets.USE_BEDROCK }}
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           COST_LINE="$(uv run python -m utils.anthropic_cost 2>/dev/null || echo '사용 비용: (조회 실패)')"
