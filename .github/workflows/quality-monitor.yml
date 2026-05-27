@@ -41,7 +41,7 @@ jobs:
             || echo "reports-cache 브랜치 없음 — URL/토픽 검사 스킵"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8
+        uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
