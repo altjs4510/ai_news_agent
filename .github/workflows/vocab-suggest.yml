@@ -23,10 +23,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout agent
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Checkout blog (read-only)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: altjs4510/ai_news_blog
           token: ${{ secrets.BLOG_PUSH_TOKEN }}
@@ -34,7 +34,7 @@ jobs:
           fetch-depth: 1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v8
         with:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"

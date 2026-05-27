@@ -18,10 +18,10 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Checkout agent
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Checkout blog (with push token)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: altjs4510/ai_news_blog
           token: ${{ secrets.BLOG_PUSH_TOKEN }}
@@ -30,7 +30,7 @@ jobs:
           persist-credentials: true
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v8
         with:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
