@@ -59,5 +59,8 @@ jobs:
       - name: Run curation
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          USE_BEDROCK: ${{ secrets.USE_BEDROCK }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           BLOG_REPO_PATH: ${{ github.workspace }}/ai_news_blog_repo
         run: uv run python curate.py
