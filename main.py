@@ -738,8 +738,19 @@ CATEGORY_VOCABULARY = [
 ]
 
 
+# openai.com 등 Cloudflare 봇 보호 사이트는 HEAD/GET에 401·403·429를 던지지만
+# 사람이 브라우저로 열면 정상 표시된다. 이런 상태는 "죽은 URL"이 아니라
+# "봇 차단"일 뿐이므로 alive로 간주해 source_url과 study brief 입력에서 살린다.
+# (study_brief.fetch_article_text는 r.jina.ai readability proxy로 본문은 따로 우회.)
+_ALIVE_STATUSES = {401, 403, 405, 429}
+
+
+def _looks_alive(status: int) -> bool:
+    return status < 400 or status in _ALIVE_STATUSES
+
+
 async def _check_url(url: str, timeout: int = 8) -> bool:
-    """URL이 실제로 접근 가능한지 HEAD 요청으로 확인. 4xx/5xx면 False."""
+    """URL이 실제로 살아 있는지 확인. 404/410/5xx만 dead로 본다."""
     if not url or not url.startswith("http"):
         return False
     try:
@@ -758,8 +769,8 @@ async def _check_url(url: str, timeout: int = 8) -> bool:
                         allow_redirects=True,
                         headers={"User-Agent": "Mozilla/5.0 (compatible; ai-news-agent/0.1)"},
                     ) as gresp:
-                        return gresp.status < 400
-                return resp.status < 400
+                        return _looks_alive(gresp.status)
+                return _looks_alive(resp.status)
     except Exception:
         return False
 
