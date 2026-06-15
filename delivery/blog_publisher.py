@@ -407,8 +407,9 @@ class BlogPublisher:
     ) -> str | None:
         """주간 모드 publish — posts/{date}/_index.md + raw.md 생성, 홈 hero 갱신.
 
-        knowledge note는 만들지 않음 (daily 픽이 매일 그 역할을 함).
-        has_study는 호환 인자로 유지하지만 weekly에서는 사용하지 않음.
+        knowledge note(daily 트리)는 만들지 않음 (daily 픽이 매일 그 역할을 함).
+        다만 spotlight에 related_daily 매칭이 없고 has_study=True면, weekly 픽
+        자체의 학습 브리프를 posts/{date}/study/ 로 함께 발행해 CTA 진입로를 만든다.
         """
         if not self.blog_repo.is_dir():
             logger.error(f"블로그 레포를 찾을 수 없습니다: {self.blog_repo}")
@@ -452,6 +453,44 @@ class BlogPublisher:
             rd = spotlight.get("related_daily")
             if isinstance(rd, str) and rd.strip():
                 spotlight_detail_url = f"knowledge/{rd.strip()}/"
+
+        # related_daily 매칭이 없는 주(또는 daily picks가 없던 주)는 위에서
+        # spotlight_detail_url이 비어 "자세히 보기" CTA가 사라진다. 그 경우 main이
+        # 미리 생성해 둔 weekly 픽 학습 브리프(study.md)를 posts/{date}/study/ 로
+        # 발행해 진입로를 보장한다. knowledge/ 트리에는 넣지 않는다 — 그 트리는
+        # 파일 stem을 YYYYMMDD 날짜로 파싱하므로 비-날짜 slug가 들어가면 깨진다.
+        if not spotlight_detail_url and has_study and isinstance(spotlight, dict):
+            study_src = src / "study.md"
+            if study_src.exists():
+                study_text = study_src.read_text(encoding="utf-8").strip()
+                if study_text:
+                    sp_title = (spotlight.get("title") or "").strip()
+                    sp_url = (spotlight.get("url") or "").strip()
+                    study_h1 = sp_title or display_date
+                    study_hero = self._detail_hero_html(
+                        "이번 호", display_date, "학습 브리프", study_h1
+                    )
+                    origin_block = (
+                        f"> 원문: [{sp_title or sp_url}]({sp_url})\n\n" if sp_url else ""
+                    )
+                    study_page = (
+                        "---\n"
+                        f'title: "{(sp_title or display_date).replace(chr(34), chr(39))}"\n'
+                        f"date: {display_date}\n"
+                        + (f'source_url: "{sp_url}"\n' if sp_url else "")
+                        # /posts/ listing·RSS·sitemap에는 노출하지 않고, spotlight
+                        # CTA와 직접 URL로만 도달 (raw.md와 동일 정책).
+                        + "build:\n  list: never\n  render: always\n"
+                        + "---\n\n"
+                        '<article class="ai-knowledge-article">\n\n'
+                        + study_hero
+                        + origin_block
+                        + study_text
+                        + "\n\n</article>\n"
+                    )
+                    (target / "study.md").write_text(study_page, encoding="utf-8")
+                    spotlight_detail_url = f"posts/{date_str}/study/"
+                    logger.info(f"weekly 자체 학습 브리프 생성: posts/{date_str}/study/")
 
         # 키워드를 Hugo taxonomy(tags)에 노출 → /tags/<keyword>/ 자동 생성
         # 백틱(`...`)이 붙은 키워드는 벗기고, 양옆 공백 정리
@@ -590,6 +629,10 @@ class BlogPublisher:
             "keywords": list(clean_tags),
             "categories": list(categories or []),
             "body": combined_body or "",
+            # 홈은 매 daily publish마다 _render_home_from_state로 재렌더된다.
+            # related_daily(weekly→daily) 매칭 URL이든 weekly 자체 study URL이든
+            # 여기 박아두지 않으면 daily 재렌더 때 CTA가 사라진다.
+            "spotlight_detail_url": spotlight_detail_url or "",
         }
         self._save_state(state)
         self._render_home_from_state(state)
@@ -1019,8 +1062,11 @@ class BlogPublisher:
         # 매칭 검증은 main에서 끝났고 여기서는 state 신뢰. weekly hero에는 daily용
         # "📚 오늘의 학습" 보조 CTA가 어울리지 않으므로 study_url_path는 비워두고
         # spotlight 전용 인자로 전달한다.
-        spotlight_detail_url: str | None = None
-        if isinstance(spotlight, dict):
+        # publish_weekly가 박아둔 값(related_daily 매칭 URL 또는 weekly 자체
+        # study URL)을 우선 신뢰. 구버전 state(필드 없음) 호환 위해 related_daily
+        # 파생을 폴백으로 유지.
+        spotlight_detail_url: str | None = (weekly.get("spotlight_detail_url") or "").strip() or None
+        if not spotlight_detail_url and isinstance(spotlight, dict):
             rd = spotlight.get("related_daily")
             if isinstance(rd, str) and rd.strip():
                 spotlight_detail_url = f"knowledge/{rd.strip()}/"

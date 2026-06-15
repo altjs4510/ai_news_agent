@@ -11,7 +11,7 @@ AI 동향을 다양한 소스에서 자동 수집·번역·요약·인사이트�
 - **2-tier 발행 모드**:
   - **Daily** (화~일 23:30 KST): 24h raw → spotlight 1개 + 학습 노트 1편을 `/knowledge/YYYYMMDD/`에 발행
   - **Weekly** (월요일 06:00 KST): 지난주 월~일 7일치 → 헤드라인+전체요약+spotlight+picks를 `/posts/YYYYMMDD/`에 발행
-- **Weekly ↔ Daily knowledge 매칭**: weekly LLM 프롬프트에 같은 주 daily picks를 컨텍스트로 주고, `spotlight.related_daily`(매칭된 daily date_str 또는 null)로 응답받아 TODAY'S PICK "자세히 보기 →" CTA를 그 daily knowledge 페이지로 연결
+- **Weekly ↔ Daily knowledge 매칭**: weekly LLM 프롬프트에 같은 주 daily picks를 컨텍스트로 주고, `spotlight.related_daily`(매칭된 daily date_str 또는 null)로 응답받아 TODAY'S PICK "자세히 보기 →" CTA를 그 daily knowledge 페이지로 연결. 매칭이 없으면(`related_daily=null`) weekly 픽 자체의 학습 브리프를 생성해 `/posts/YYYYMMDD/study/`에 발행하고 CTA를 그쪽으로 연결 — 어느 주든 "자세히 보기" 진입로가 비지 않도록 보장
 - **자동 URL 검증**: LLM이 생성한 spotlight/additional_picks URL을 HEAD 요청으로 사전 검증 (404 제거)
 - **자동 키워드 생성**: 수집된 콘텐츠에서 중요 키워드 추출
 - **블로그 자동 발행**: 결과 마크다운을 별도 ai_news_blog 레포에 commit·push → GitHub Actions가 Hugo로 빌드해 Pages에 배포

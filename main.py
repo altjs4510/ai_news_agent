@@ -338,10 +338,24 @@ async def main(mode: str = "daily"):
                 logger.error(f"summary.md 작성 실패: {e}")
 
         # Spotlight가 정해지면 그 자료 한 건을 깊이 공부할 수 있도록 학습 브리프 생성.
-        # daily 모드에서만 — weekly는 학습 노트 없이 요약/picks만.
+        # - daily: 항상 생성 → knowledge/{date}.md 가 그 역할.
+        # - weekly: related_daily가 매칭되면 그 daily 브리프로 CTA를 걸므로 생략하지만,
+        #   매칭이 없으면(related_daily=None) "자세히 보기" 진입로가 통째로 사라진다.
+        #   그 경우 weekly 픽 자체의 브리프를 만들어 posts/{date}/study/ 로 건다.
         # 실패해도 publish 자체는 진행.
         study_md_written = False
-        if mode == "daily" and spotlight and isinstance(spotlight, dict) and spotlight.get("url"):
+        _related_daily = (
+            str(spotlight.get("related_daily") or "").strip()
+            if mode == "weekly" and isinstance(spotlight, dict)
+            else ""
+        )
+        _should_build_brief = bool(
+            spotlight
+            and isinstance(spotlight, dict)
+            and spotlight.get("url")
+            and (mode == "daily" or (mode == "weekly" and not _related_daily))
+        )
+        if _should_build_brief:
             try:
                 logger.info(f"학습 브리프 생성 중: {spotlight.get('title')}")
                 brief = await generate_study_brief(spotlight)
