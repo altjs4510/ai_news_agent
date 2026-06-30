@@ -110,18 +110,28 @@ def _scan_knowledge() -> dict:
     return {"cat_counter": dict(cat_counter), "uncategorized": uncategorized, "total": total}
 
 
+# reddit.com·openai.com 등 봇 보호 사이트는 HEAD/GET에 401·403·405·429를 던지지만
+# 사람이 브라우저로 열면 정상이다. 이런 상태는 "죽은 URL"이 아니라 "봇 차단"이므로
+# alive로 간주한다. main.py._looks_alive 와 동일한 정책 (404/410/5xx만 dead).
+_ALIVE_STATUSES = {401, 403, 405, 429}
+
+
+def _looks_alive(status: int) -> bool:
+    return status < 400 or status in _ALIVE_STATUSES
+
+
 async def _check_url(session: aiohttp.ClientSession, url: str) -> bool:
     try:
         async with session.head(
             url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=10)
         ) as r:
-            return r.status < 400
+            return _looks_alive(r.status)
     except Exception:
         try:
             async with session.get(
                 url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=10)
             ) as r:
-                return r.status < 400
+                return _looks_alive(r.status)
         except Exception:
             return False
 
