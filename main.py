@@ -758,35 +758,63 @@ CATEGORY_VOCABULARY = [
 # (study_brief.fetch_article_text는 r.jina.ai readability proxy로 본문은 따로 우회.)
 _ALIVE_STATUSES = {401, 403, 405, 429}
 
+# 5xx·타임아웃·커넥션 오류는 "링크가 죽은 것"이 아니라 "서버가 잠깐 흔들린 것"이므로
+# dead 로 단정하지 않고 잠깐 쉬었다 재시도한다. 확정 dead(4xx) 근거가 없으면 alive.
+# quality_monitor._check_url 와 동일 정책.
+_RETRY_ATTEMPTS = 3
+_RETRY_BACKOFF_SEC = 2.0
+_UA = "Mozilla/5.0 (compatible; ai-news-agent/0.1)"
+
 
 def _looks_alive(status: int) -> bool:
     return status < 400 or status in _ALIVE_STATUSES
 
 
-async def _check_url(url: str, timeout: int = 8) -> bool:
-    """URL이 실제로 살아 있는지 확인. 404/410/5xx만 dead로 본다."""
-    if not url or not url.startswith("http"):
-        return False
+async def _probe_url_once(url: str, timeout: int) -> str:
+    """단일 시도 결과를 'alive' | 'dead' | 'transient' 로 분류한다.
+
+    4xx(봇 차단 상태 제외) = 확정 dead. 5xx·타임아웃·커넥션 오류 = transient(재시도).
+    """
+    headers = {"User-Agent": _UA}
+    to = aiohttp.ClientTimeout(total=timeout)
     try:
         async with aiohttp.ClientSession() as session:
             async with session.head(
-                url,
-                timeout=aiohttp.ClientTimeout(total=timeout),
-                allow_redirects=True,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; ai-news-agent/0.1)"},
+                url, timeout=to, allow_redirects=True, headers=headers
             ) as resp:
-                if resp.status == 405:
+                status = resp.status
+                if status == 405:
                     # HEAD 불허 서버는 GET으로 재시도 (본문은 안 읽음)
                     async with session.get(
-                        url,
-                        timeout=aiohttp.ClientTimeout(total=timeout),
-                        allow_redirects=True,
-                        headers={"User-Agent": "Mozilla/5.0 (compatible; ai-news-agent/0.1)"},
+                        url, timeout=to, allow_redirects=True, headers=headers
                     ) as gresp:
-                        return _looks_alive(gresp.status)
-                return _looks_alive(resp.status)
+                        status = gresp.status
+                if _looks_alive(status):
+                    return "alive"
+                if status >= 500:
+                    return "transient"
+                return "dead"  # 4xx (404/410 등) — 확정 사망
     except Exception:
+        return "transient"
+
+
+async def _check_url(url: str, timeout: int = 8) -> bool:
+    """URL이 실제로 살아 있는지 확인. 4xx(404/410 등)만 dead로 본다.
+
+    5xx·타임아웃·커넥션 오류는 재시도하고, 끝까지 불확정이면 alive로 본다.
+    """
+    if not url or not url.startswith("http"):
         return False
+    for attempt in range(_RETRY_ATTEMPTS):
+        result = await _probe_url_once(url, timeout)
+        if result == "alive":
+            return True
+        if result == "dead":
+            return False
+        if attempt < _RETRY_ATTEMPTS - 1:
+            await asyncio.sleep(_RETRY_BACKOFF_SEC * (attempt + 1))
+    logger.warning(f"URL 상태 불확정(transient 지속), alive 로 처리: {url}")
+    return True
 
 
 async def _validate_pick_urls(
