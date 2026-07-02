@@ -112,28 +112,53 @@ def _scan_knowledge() -> dict:
 
 # reddit.com·openai.com 등 봇 보호 사이트는 HEAD/GET에 401·403·405·429를 던지지만
 # 사람이 브라우저로 열면 정상이다. 이런 상태는 "죽은 URL"이 아니라 "봇 차단"이므로
-# alive로 간주한다. main.py._looks_alive 와 동일한 정책 (404/410/5xx만 dead).
+# alive로 간주한다. main.py._looks_alive 와 동일한 정책 (404/410/4xx만 dead).
 _ALIVE_STATUSES = {401, 403, 405, 429}
+
+# 재시도 정책: 타임아웃·커넥션 오류·5xx 는 "링크가 죽은 것"이 아니라 "서버가 잠깐
+# 흔들린 것"이므로 dead 로 단정하지 않고 잠깐 쉬었다 다시 본다. reddit 이 부하 시
+# 간헐적으로 5xx/타임아웃을 던져 false-positive "죽은 링크" 알림이 뜨던 문제 대응.
+_RETRY_ATTEMPTS = 3
+_RETRY_BACKOFF_SEC = 2.0
 
 
 def _looks_alive(status: int) -> bool:
     return status < 400 or status in _ALIVE_STATUSES
 
 
-async def _check_url(session: aiohttp.ClientSession, url: str) -> bool:
-    try:
-        async with session.head(
-            url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=10)
-        ) as r:
-            return _looks_alive(r.status)
-    except Exception:
+async def _probe_once(session: aiohttp.ClientSession, url: str) -> str:
+    """단일 시도 결과를 'alive' | 'dead' | 'transient' 로 분류한다.
+
+    4xx(봇 차단 상태 제외) = 확정 dead. 5xx·타임아웃·커넥션 오류 = transient(재시도).
+    """
+    for method in (session.head, session.get):
         try:
-            async with session.get(
+            async with method(
                 url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=10)
             ) as r:
-                return _looks_alive(r.status)
+                if _looks_alive(r.status):
+                    return "alive"
+                if r.status >= 500:
+                    return "transient"
+                return "dead"  # 4xx (404/410 등) — 확정 사망
         except Exception:
+            continue  # HEAD 실패 시 GET 으로, 둘 다 실패면 transient
+    return "transient"
+
+
+async def _check_url(session: aiohttp.ClientSession, url: str) -> bool:
+    for attempt in range(_RETRY_ATTEMPTS):
+        result = await _probe_once(session, url)
+        if result == "alive":
+            return True
+        if result == "dead":
             return False
+        # transient — 마지막 시도가 아니면 잠깐 쉬었다 재시도
+        if attempt < _RETRY_ATTEMPTS - 1:
+            await asyncio.sleep(_RETRY_BACKOFF_SEC * (attempt + 1))
+    # 모든 시도가 transient 로 끝남 — 확정 dead 근거가 없으므로 alive 로 본다
+    logger.warning(f"URL 상태 불확정(transient 지속), alive 로 처리: {url}")
+    return True
 
 
 async def _run_checks() -> list[str]:
