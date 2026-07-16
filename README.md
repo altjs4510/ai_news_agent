@@ -145,6 +145,25 @@ uv run main.py --mode weekly
 - **보고서**: `reports/YYYYMMDD/` 에서 생성된 raw 데이터 + meta.json
 - **상태**: `state/home_state.json` (weekly + daily_picks 누적)
 
+## 수기 리서치 노트 (`publish_note.py`)
+
+자동 수집과 별개로, **링크 하나를 직접 골라 리서치한 다이제스트**(논문·툴·아티클·릴리스 무엇이든)를
+같은 knowledge 베이스에 누적한다. 자동 데일리 픽과 파일명이 겹치지 않도록 stem 을
+`YYYYMMDD-<slug>` 로 쓴다(순수 `YYYYMMDD` stem 은 자동 픽 전용).
+
+```bash
+python publish_note.py --slug proprag \
+  --title "제목" --source-url https://... \
+  --category "모델 & 연구" --tags "a,b,c" --body-file /tmp/digest.md
+```
+
+- 이 스크립트는 **knowledge md 파일만 쓴다**(git 안 함). 발행은 **review-first** — 본문 확인 후
+  OK 면 별도로 `git commit && push`.
+- push 후 다음 **curate** 실행이 전체 사이드바에 이 항목을 자동 전파한다.
+- `--category` 는 8종 vocabulary(`CATEGORY_VOCABULARY`) 중 하나 권장 — 그래야 curate 가 안 건드림.
+- 사이드바 빌더는 `delivery/blog_publisher.py` 를 미러링(stdlib 자립). vocabulary 변경 시
+  `main.CATEGORY_VOCABULARY` 와 `publish_note.py:VOCAB` 를 함께 맞춘다.
+
 ## 문제 해결
 
 - **API 한도 초과**: OpenAI 또는 Anthropic API 요청 제한에 도달한 경우, 로그를 확인하고 일정 시간 후 다시 시도
