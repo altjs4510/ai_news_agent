@@ -317,7 +317,8 @@ class BlogPublisher:
             open_attr = " open" if is_open else ""
             li_html = []
             for date, title in items:
-                display_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+                _dk = date[:8]  # 'YYYYMMDD-slug' 수기 노트: 앞 8자리만 날짜로. 순수 날짜 stem은 동작 동일
+                display_date = f"{_dk[:4]}-{_dk[4:6]}-{_dk[6:8]}" if _dk.isdigit() else date
                 t = title.replace("&", "&amp;").replace("<", "&lt;")
                 short_t = t[:48] + ("…" if len(t) > 48 else "")
                 cls = ' class="current"' if date == current_date_str else ""
