@@ -61,6 +61,17 @@ _CLI_ALIASES: dict[str, str] = {
     "claude-sonnet-5": "sonnet",
     "claude-haiku-4-5": "haiku",
 }
+# CLI 별칭 → canonical (claude -p 실패 시 프록시 폴백에서 원래 모델명 복원용).
+_CLI_TO_CANONICAL: dict[str, str] = {v: k for k, v in _CLI_ALIASES.items()}
+
+
+def _proxy_configured() -> bool:
+    """LiteLLM/Anthropic 프록시 폴백에 필요한 설정이 있는지."""
+    return bool(
+        os.getenv("ANTHROPIC_BASE_URL")
+        or os.getenv("ANTHROPIC_AUTH_TOKEN")
+        or os.getenv("ANTHROPIC_API_KEY")
+    )
 
 
 def _flag(name: str) -> bool:
@@ -125,6 +136,20 @@ class _Response:
 
 def _claude_bin() -> str:
     return os.getenv("CLAUDE_CLI_BIN") or shutil.which("claude") or "claude"
+
+
+# claude -p 는 환경에 이 키들이 있으면 구독 로그인 대신 그걸(=프록시) 우선해 버린다.
+# 서브프로세스 env 에서 제거해야 claude.ai 구독 인증을 쓴다. (폴백 프록시 클라이언트는
+# 메인 프로세스 env 로 별도 구성되므로 영향 없음.)
+_PROXY_ENV_KEYS = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN",
+                   "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL")
+
+
+def _cli_env() -> dict:
+    env = dict(os.environ)
+    for k in _PROXY_ENV_KEYS:
+        env.pop(k, None)
+    return env
 
 
 def _cli_timeout() -> int:
@@ -192,7 +217,7 @@ class _CLIMessages:
         cmd = _build_cmd(prompt, model, sys_prompt)
         proc = subprocess.run(
             cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            timeout=_cli_timeout(),
+            timeout=_cli_timeout(), env=_cli_env(),
         )
         if proc.returncode != 0:
             raise RuntimeError(
@@ -202,9 +227,62 @@ class _CLIMessages:
         return _Response(text, usage)
 
 
+def _log():
+    import logging
+    return logging.getLogger("llm_client")
+
+
+def _wrap_proxy(resp: Any) -> _Response:
+    """프록시(Anthropic SDK) 응답을 _Response 로 정규화 + 펜스 스트립(CLI 경로와 통일)."""
+    text = resp.content[0].text if getattr(resp, "content", None) else ""
+    u = getattr(resp, "usage", None)
+    return _Response(
+        _strip_outer_fence(text),
+        _Usage(getattr(u, "input_tokens", 0) or 0, getattr(u, "output_tokens", 0) or 0),
+        getattr(resp, "stop_reason", "end_turn") or "end_turn",
+    )
+
+
+def _proxy_kwargs(model: str, messages: list[dict], system, max_tokens, temperature) -> dict:
+    """CLI 별칭 model 을 canonical 로 되돌려 프록시(Anthropic SDK) create kwargs 구성."""
+    kwargs: dict[str, Any] = {
+        "model": _CLI_TO_CANONICAL.get(model, model),
+        "messages": messages,
+    }
+    if system is not None:
+        kwargs["system"] = system
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    return kwargs
+
+
+class _FallbackMessages:
+    """claude -p 우선, 실패 시 LiteLLM/Anthropic 프록시로 per-call 폴백 (sync)."""
+    def __init__(self):
+        self._cli = _CLIMessages()
+        self._proxy = None
+
+    def create(self, *, model, messages, system=None, max_tokens=None,
+               temperature=None, **kw) -> Any:
+        try:
+            return self._cli.create(model=model, messages=messages, system=system,
+                                    max_tokens=max_tokens, temperature=temperature, **kw)
+        except Exception as e:
+            if not _proxy_configured():
+                raise
+            _log().warning(f"claude -p 실패 → LiteLLM 프록시 폴백: {e}")
+            if self._proxy is None:
+                from anthropic import Anthropic
+                self._proxy = Anthropic()
+            return _wrap_proxy(self._proxy.messages.create(
+                **_proxy_kwargs(model, messages, system, max_tokens, temperature)))
+
+
 class _ClaudeCLIClient:
     def __init__(self):
-        self.messages = _CLIMessages()
+        self.messages = _FallbackMessages()
 
 
 class _AsyncCLIMessages:
@@ -217,6 +295,7 @@ class _AsyncCLIMessages:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            env=_cli_env(),
         )
         try:
             out, err = await asyncio.wait_for(proc.communicate(), timeout=_cli_timeout())
@@ -231,9 +310,31 @@ class _AsyncCLIMessages:
         return _Response(text, usage)
 
 
+class _AsyncFallbackMessages:
+    """claude -p 우선, 실패 시 프록시로 per-call 폴백 (async)."""
+    def __init__(self):
+        self._cli = _AsyncCLIMessages()
+        self._proxy = None
+
+    async def create(self, *, model, messages, system=None, max_tokens=None,
+                     temperature=None, **kw) -> Any:
+        try:
+            return await self._cli.create(model=model, messages=messages, system=system,
+                                          max_tokens=max_tokens, temperature=temperature, **kw)
+        except Exception as e:
+            if not _proxy_configured():
+                raise
+            _log().warning(f"claude -p 실패 → LiteLLM 프록시 폴백: {e}")
+            if self._proxy is None:
+                from anthropic import AsyncAnthropic
+                self._proxy = AsyncAnthropic()
+            return _wrap_proxy(await self._proxy.messages.create(
+                **_proxy_kwargs(model, messages, system, max_tokens, temperature)))
+
+
 class _AsyncClaudeCLIClient:
     def __init__(self):
-        self.messages = _AsyncCLIMessages()
+        self.messages = _AsyncFallbackMessages()
 
 
 # ---------------------------------------------------------------------------
