@@ -80,7 +80,7 @@ async def _classify(client, title: str, body_excerpt: str) -> list[str]:
 {{"categories": ["..."]}}
 """
     response = client.messages.create(
-        model=resolve_model("claude-sonnet-4-6"),
+        model=resolve_model("claude-sonnet-5"),
         max_tokens=200,
         system=(
             "너는 기술 콘텐츠 분류 전문가다. 주어진 학습 노트를 고정된 카테고리 vocabulary에서 "

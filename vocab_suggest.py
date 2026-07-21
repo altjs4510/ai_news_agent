@@ -117,7 +117,7 @@ def _generate_suggestion(dist: dict) -> str:
         return "## ℹ️ 학습 노트가 아직 없어 vocabulary 진화 제안을 생성하지 않습니다."
     client = make_client()
     response = client.messages.create(
-        model=resolve_model("claude-opus-4-7"),
+        model=resolve_model("claude-opus-4-8"),
         max_tokens=4000,
         system=(
             "너는 정보 아키텍처 전문가다. 콘텐츠 분포를 보고 카테고리 vocabulary가 "

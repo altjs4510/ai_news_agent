@@ -4,8 +4,11 @@ name: Vocabulary 진화 제안 (monthly)
 # 사람이 검토 후 동의하면 main.py CATEGORY_VOCABULARY 편집 → curate.yml 재분류.
 
 on:
-  schedule:
-    - cron: "0 2 1 * *"   # 매월 1일 02:00 UTC = 11:00 KST
+  # ⚠️ 스케줄 비활성 — LLM 백엔드가 F&F LiteLLM 사내망 프록시로 이관(공용 러너 도달 불가).
+  # 월간 실행은 로컬 launchd 로 이관: com.cookie.ainews.vocab → run_pipeline.sh vocab
+  #   (매월 1일 11:00 KST). CLAUDE.md 참조.
+  # schedule:
+  #   - cron: "0 2 1 * *"   # (구) 매월 1일 11:00 KST
   workflow_dispatch:
     inputs:
       reason:

@@ -11,9 +11,11 @@ on:
         description: "큐레이션 사유 메모"
         required: false
         default: "manual"
-  workflow_run:
-    workflows: ["Daily AI News Digest"]
-    types: [completed]
+  # ⚠️ 자동 체인 비활성 — daily 가 로컬 launchd 로 이관됨. 이제 로컬 run_pipeline.sh 가
+  # daily→curate→link-related→quality-monitor 를 순차 실행. (공용 러너는 LiteLLM 사내망 도달 불가.)
+  # workflow_run:
+  #   workflows: ["Daily AI News Digest"]
+  #   types: [completed]
 
 permissions:
   contents: read

@@ -151,7 +151,7 @@ mermaid 다이어그램(```mermaid 코드 블록 허용)으로 흐름을 그리�
     try:
         client = make_client()
         response = client.messages.create(
-            model=resolve_model("claude-opus-4-7"),
+            model=resolve_model("claude-opus-4-8"),
             max_tokens=6000,
             system=(
                 "너는 비전공자·기획자도 한 번에 이해할 수 있도록 풀어 쓰는 한국어 입문 가이드 작성자다. "
@@ -202,7 +202,7 @@ async def _generate_full_translation(spotlight: dict, raw_text: str) -> str | No
     try:
         client = make_client()
         response = client.messages.create(
-            model=resolve_model("claude-sonnet-4-6"),
+            model=resolve_model("claude-sonnet-5"),
             max_tokens=12000,
             system=(
                 "너는 정확한 한국어 기술 번역가다. 영문 기술 자료를 한 문단도 빠뜨리지 않고 "

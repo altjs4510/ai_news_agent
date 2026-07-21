@@ -9,7 +9,7 @@ from sources.ai_blogs import AIBlogCollector
 from sources.news_feeds import NewsFeedCollector
 from sources.research_feeds import ResearchFeedCollector
 from sources.bluesky import BlueskyCollector
-from config import BLUESKY_HANDLES
+from config import BLUESKY_HANDLES, REDDIT_CLIENT_ID
 from delivery.markdown_writer import MarkdownWriter
 from delivery.study_brief import generate_study_brief
 from delivery.notion_writer import NotionWriter
@@ -131,9 +131,11 @@ async def main(mode: str = "daily"):
         if ENABLE_YOUTUBE:
             youtube = YouTubeParser()
             collectors.append(('youtube', youtube.fetch_videos()))
-        if ENABLE_REDDIT:
+        if ENABLE_REDDIT and REDDIT_CLIENT_ID:
             reddit = RedditCollector(days=days_window)
             collectors.append(('reddit', reddit.fetch_posts()))
+        elif ENABLE_REDDIT:
+            logger.warning("Reddit 자격증명(REDDIT_CLIENT_ID) 없음 — Reddit 소스 스킵")
         if ENABLE_GITHUB_TRENDING:
             gh_since = "daily" if mode == "daily" else "weekly"
             github = GitHubTrendingCollector(since=gh_since, limit=25)
@@ -500,7 +502,7 @@ async def evaluate_post_relevance(title):
 
         client = make_async_client()
         response = await client.messages.create(
-            model=resolve_model("claude-haiku-4-5-20251001"),
+            model=resolve_model("claude-haiku-4-5"),
             max_tokens=8,
             temperature=0.1,
             messages=[{"role": "user", "content": prompt}],
@@ -542,7 +544,7 @@ async def translate_content(content):
         logger.info(f"Anthropic API 호출 중... ({title[:30]}...)")
 
         response = await client.messages.create(
-            model=resolve_model("claude-haiku-4-5-20251001"),
+            model=resolve_model("claude-haiku-4-5"),
             max_tokens=2000,
             temperature=0.3,
             messages=[{"role": "user", "content": prompt}],
@@ -707,7 +709,7 @@ async def summarize_combined_insights(
 
         client = make_client()
         message = client.messages.create(
-            model=resolve_model("claude-opus-4-7"),
+            model=resolve_model("claude-opus-4-8"),
             max_tokens=15000,
             messages=[{
                 "role": "user",
@@ -1030,7 +1032,7 @@ ai_news_agent는 보조 후보입니다.
         # Claude API 호출
         client = make_client()
         response = client.messages.create(
-            model=resolve_model("claude-opus-4-7"),
+            model=resolve_model("claude-opus-4-8"),
             max_tokens=6000,
             system="너는 AI 뉴스 분석과 요약을 전문으로 하는 Assistant입니다. 주어진 콘텐츠에서 핵심 내용을 파악하고 출처 링크를 포함해 정확하게 요약합니다. 응답은 항상 단일 JSON 객체여야 합니다.",
             messages=[{"role": "user", "content": prompt}]

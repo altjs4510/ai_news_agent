@@ -1,7 +1,7 @@
 """Anthropic / Bedrock 클라이언트 팩토리.
 
 환경변수 USE_BEDROCK=1이면 AnthropicBedrock으로 라우팅, 그 외에는 기본 Anthropic API 사용.
-호출부는 표준 canonical 모델명(e.g. "claude-opus-4-7")을 그대로 쓰고, 이 모듈이
+호출부는 표준 canonical 모델명(e.g. "claude-opus-4-8")을 그대로 쓰고, 이 모듈이
 Bedrock 모드일 때 적절한 Bedrock 모델 ID로 치환한다.
 
 설정 env vars:
@@ -22,15 +22,15 @@ from typing import Any
 # inference profile 접두사(global./us./apac.)는 리전/계정 권한에 따라 조정 필요.
 # env var로 오버라이드 가능.
 _BEDROCK_DEFAULTS: dict[str, str] = {
-    "claude-opus-4-7": "global.anthropic.claude-opus-4-7",
-    "claude-sonnet-4-6": "global.anthropic.claude-sonnet-4-6",
-    "claude-haiku-4-5-20251001": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "claude-opus-4-8": "global.anthropic.claude-opus-4-8",
+    "claude-sonnet-5": "global.anthropic.claude-sonnet-5",
+    "claude-haiku-4-5": "global.anthropic.claude-haiku-4-5-v1:0",
 }
 
 _BEDROCK_ENV_OVERRIDES: dict[str, str] = {
-    "claude-opus-4-7": "BEDROCK_MODEL_OPUS_4_7",
-    "claude-sonnet-4-6": "BEDROCK_MODEL_SONNET_4_6",
-    "claude-haiku-4-5-20251001": "BEDROCK_MODEL_HAIKU_4_5",
+    "claude-opus-4-8": "BEDROCK_MODEL_OPUS_4_7",
+    "claude-sonnet-5": "BEDROCK_MODEL_SONNET_4_6",
+    "claude-haiku-4-5": "BEDROCK_MODEL_HAIKU_4_5",
 }
 
 

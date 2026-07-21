@@ -1,11 +1,12 @@
 name: Daily AI News Digest
 
 on:
-  schedule:
-    # 매일 21:00 UTC = 매일 06:00 KST
-    # 단, UTC 일요일(=KST 월요일)은 weekly.yml이 담당하므로 제외 → 1-6 (월~토 UTC).
-    - cron: "0 21 * * 1-6"
-  workflow_dispatch:  # 수동 트리거 허용
+  # ⚠️ 스케줄 비활성 — LLM 백엔드가 F&F LiteLLM 사내망 프록시(10.91.x.x)로 이관되어
+  # GitHub 공용 러너에서 도달 불가. 스케줄 실행은 로컬 launchd 로 이관:
+  #   com.cookie.ainews.daily → run_pipeline.sh daily (06:00 KST 화~일). CLAUDE.md 참조.
+  # schedule:
+  #   - cron: "0 21 * * 1-6"   # (구) 매일 06:00 KST, 월요일 제외
+  workflow_dispatch:  # 수동 트리거만 유지
 
 permissions:
   contents: write   # reports-cache 브랜치 force-push에 필요

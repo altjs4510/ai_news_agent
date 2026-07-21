@@ -109,32 +109,35 @@ cd ai_news_agent
 
 ## 사용 방법
 
-### 자동 스케줄링 (GitHub Actions)
+### 자동 스케줄링 (로컬 launchd)
 
-발행은 GitHub Actions의 두 워크플로가 담당:
+> **2026-07 이관**: LLM 백엔드를 F&F PRCS **LiteLLM 프록시**로 바꿨는데 이 프록시가 사내망 전용(`10.91.x.x`)이라 GitHub 공용 러너에서 못 닿는다. 그래서 스케줄 발행을 **로컬 launchd** 로 옮겼고, `.github/workflows/*.yml` 의 `schedule`/`workflow_run` 자동 트리거는 모두 비활성(주석)했다 — `workflow_dispatch`(수동)만 남김. 상세·재실행법은 `CLAUDE.md` 참조.
 
-- **`.github/workflows/daily.yml`** — 매일 21:00 UTC (= 06:00 KST), 단 UTC 일요일 제외 (월요일은 weekly 담당). `--mode daily` 실행 → `/knowledge/YYYYMMDD/`에 그날의 픽 1개 발행.
-- **`.github/workflows/weekly.yml`** — 매주 일요일 21:00 UTC (= 월요일 06:00 KST). `--mode weekly` 실행 → `/posts/YYYYMMDD/`에 지난 7일 종합 발행.
+발행은 이 맥의 launchd 3개(`~/Library/LaunchAgents/com.cookie.ainews.{daily,weekly,vocab}.plist`)가 담당하며, 모두 래퍼 **`run_pipeline.sh <mode>`** 를 호출한다:
 
-수동 트리거: GitHub Actions 탭에서 workflow_dispatch 또는 `gh workflow run`.
+- **daily** — 06:00 KST 화~일. `main.py --mode daily`(→ `/knowledge/YYYYMMDD/`) 후 `curate.py`→`link_related.py`→`quality_monitor.py` 순차 실행.
+- **weekly** — 06:00 KST 월. `main.py --mode weekly` → `/posts/YYYYMMDD/`.
+- **vocab** — 매월 1일 11:00 KST. `vocab_suggest.py`.
 
-필요한 secrets (Repo Settings → Secrets and variables → Actions):
+launchd 관리:
+```bash
+launchctl list | grep ainews                                   # 상태
+launchctl kickstart -k gui/$(id -u)/com.cookie.ainews.daily    # 즉시 1회 실행(테스트)
+# plist 수정 후: launchctl bootout … && launchctl bootstrap gui/$(id -u) <plist>
+```
 
-- `ANTHROPIC_API_KEY` — Anthropic API 사용 시 (Bedrock 미사용 모드)
-- `USE_BEDROCK` — `1`로 설정하면 AWS Bedrock 경유 (Anthropic API key 대신 사용)
-- `AWS_REGION` — Bedrock 리전 (e.g. `ap-northeast-2`)
-- `AWS_BEARER_TOKEN_BEDROCK` — Bedrock 인증 토큰 (또는 표준 AWS 자격 증명)
-- `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`
-- `BLOG_PUSH_TOKEN` — ai_news_blog 레포에 push 권한이 있는 PAT
-- `SLACK_WEBHOOK_URL` (옵션, 실패 알림)
-- `ANTHROPIC_ADMIN_KEY` (옵션, sk-ant-admin01-… — 설정하면 Slack 실패 알림에 오늘/이번달 Anthropic 사용 비용을 함께 표시. Bedrock 모드에서는 AWS Cost Explorer를 사용하므로 무시됨)
+발행 결과·블로그 push(SSH `github-personal`)는 로컬에서 이뤄지므로, 이 맥이 **F&F 망에 연결**돼 있고(프록시 도달) 켜져 있어야 한다. 로그: `logs/pipeline_{daily,weekly,vocab}.log`, `logs/launchd_*.{out,err}.log`.
+
+**설정(.env, git-ignore)** — `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`(LiteLLM `sk-…`), 선택 `REDDIT_*`, `SLACK_WEBHOOK_URL`(실패 알림). `USE_BEDROCK` 은 넣지 않음. 백엔드 분기는 `utils/llm_client.py`, 상세는 `CLAUDE.md`.
 
 ### 로컬 수동 실행 (디버깅용)
 ```bash
-# .env 필요 (위 secrets와 동일 키)
-uv run main.py --mode daily
-uv run main.py --mode weekly
+uv run python main.py --mode daily     # .env 필요
+uv run python main.py --mode weekly
+./run_pipeline.sh daily                # 후속 체인(curate/link/quality)까지 한 번에
 ```
+
+GitHub Actions 는 이제 수동 전용 — `gh workflow run <name> --repo altjs4510/ai_news_agent` (단 위 사내망 제약으로 LLM 단계는 실패). Actions secrets 는 레거시.
 
 ## 결과 확인
 

@@ -1,10 +1,12 @@
 name: Weekly AI News Digest
 
 on:
-  schedule:
-    # 매주 일요일 21:00 UTC = 매주 월요일 06:00 KST
-    - cron: "0 21 * * 0"
-  workflow_dispatch:  # 수동 트리거 허용
+  # ⚠️ 스케줄 비활성 — LLM 백엔드가 F&F LiteLLM 사내망 프록시로 이관(공용 러너 도달 불가).
+  # 스케줄 실행은 로컬 launchd 로 이관: com.cookie.ainews.weekly → run_pipeline.sh weekly
+  #   (06:00 KST 월). CLAUDE.md 참조.
+  # schedule:
+  #   - cron: "0 21 * * 0"   # (구) 매주 월요일 06:00 KST
+  workflow_dispatch:  # 수동 트리거만 유지
 
 permissions:
   contents: write   # reports-cache 브랜치 force-push에 필요

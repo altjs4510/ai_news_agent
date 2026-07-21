@@ -4,9 +4,11 @@ name: AI News 품질 모니터 (quality-monitor)
 # 이상 감지 시 Slack 알림.
 
 on:
-  workflow_run:
-    workflows: ["Daily AI News Digest"]
-    types: [completed]
+  # ⚠️ 자동 체인 비활성 — 로컬 run_pipeline.sh 가 daily 뒤 quality-monitor 실행.
+  # (LLM 미사용이지만 트리거였던 Actions daily 가 로컬로 이관됨.) CLAUDE.md 참조.
+  # workflow_run:
+  #   workflows: ["Daily AI News Digest"]
+  #   types: [completed]
   workflow_dispatch:
     inputs:
       reason:

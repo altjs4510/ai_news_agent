@@ -88,7 +88,7 @@ id={target_date}
 관련 노트가 없으면 {{"related": []}}
 """
     resp = client.messages.create(
-        model=resolve_model("claude-sonnet-4-6"),
+        model=resolve_model("claude-sonnet-5"),
         max_tokens=150,
         system=(
             "기술 문서 유사도 전문가. 개념적으로 가장 관련 깊은 노트 id를 2~3개 골라 "
