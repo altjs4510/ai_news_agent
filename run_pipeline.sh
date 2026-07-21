@@ -16,6 +16,10 @@ case "$MODE" in
     *) echo "usage: $0 daily|weekly|vocab" >&2; exit 2 ;;
 esac
 
+# 실행 동안 idle-sleep 억제 — 새벽 pmset wake 로 깨어난 뒤 파이프라인(~10분) 도는 중에
+# 맥이 다시 잠들지 않도록. 스크립트 PID 종료 시 caffeinate 도 함께 종료.
+command -v caffeinate >/dev/null && caffeinate -i -w "$$" &
+
 # .env 로드(셸 레벨) — SLACK_WEBHOOK_URL 등 셸에서 필요한 값. python 은 별도로 load_dotenv 함.
 set -a
 [ -f .env ] && . ./.env

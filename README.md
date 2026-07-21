@@ -115,9 +115,16 @@ cd ai_news_agent
 
 발행은 이 맥의 launchd 3개(`~/Library/LaunchAgents/com.cookie.ainews.{daily,weekly,vocab}.plist`)가 담당하며, 모두 래퍼 **`run_pipeline.sh <mode>`** 를 호출한다:
 
-- **daily** — 06:00 KST 화~일. `main.py --mode daily`(→ `/knowledge/YYYYMMDD/`) 후 `curate.py`→`link_related.py`→`quality_monitor.py` 순차 실행.
-- **weekly** — 06:00 KST 월. `main.py --mode weekly` → `/posts/YYYYMMDD/`.
+- **daily** — 03:00 KST 화~일. `main.py --mode daily`(→ `/knowledge/YYYYMMDD/`) 후 `curate.py`→`link_related.py`→`quality_monitor.py` 순차 실행.
+- **weekly** — 03:00 KST 월. `main.py --mode weekly` → `/posts/YYYYMMDD/`.
 - **vocab** — 매월 1일 11:00 KST. `vocab_suggest.py`.
+
+> **⚠️ 새벽 실행 = wake 필요.** launchd `StartCalendarInterval` 은 맥이 자고 있으면 그 시각에 안 돌고 *다음에 깰 때* 밀린 실행을 한다(= 아침 근무 시작 시각 → 구독 토큰 한도 경합). 그래서 03:00 실행 전에 맥을 깨우도록 **반복 wake** 를 걸어둔다:
+> ```bash
+> sudo pmset repeat wake MTWRFSU 02:58:00     # 매일 02:58 wake → 03:00 launchd 실행
+> pmset -g sched                              # 확인
+> ```
+> 확실히 깨려면 밤새 **AC 전원 연결**(뚜껑 닫혀도 대개 OK) 권장. 실행 중 재수면은 래퍼의 `caffeinate -i` 가 막는다. 03:00 실행이면 ~08:00 에 5h 롤링 한도가 리셋돼 근무(09:00)와 안 겹친다.
 
 launchd 관리:
 ```bash
@@ -126,7 +133,7 @@ launchctl kickstart -k gui/$(id -u)/com.cookie.ainews.daily    # 즉시 1회 실
 # plist 수정 후: launchctl bootout … && launchctl bootstrap gui/$(id -u) <plist>
 ```
 
-발행 결과·블로그 push(SSH `github-personal`)는 로컬에서 이뤄지므로, 이 맥이 **F&F 망에 연결**돼 있고(프록시 도달) 켜져 있어야 한다. 로그: `logs/pipeline_{daily,weekly,vocab}.log`, `logs/launchd_*.{out,err}.log`.
+발행 결과·블로그 push(SSH `github-personal`)는 로컬에서 이뤄진다. LLM 은 claude -p(구독) 우선이라 공용망에서도 되지만, LiteLLM 폴백은 F&F 망이 있어야 동작. 맥이 켜져 있어야 함. 로그: `logs/pipeline_{daily,weekly,vocab}.log`, `logs/launchd_*.{out,err}.log`.
 
 **설정(.env, git-ignore)** — `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`(LiteLLM `sk-…`), 선택 `REDDIT_*`, `SLACK_WEBHOOK_URL`(실패 알림). `USE_BEDROCK` 은 넣지 않음. 백엔드 분기는 `utils/llm_client.py`, 상세는 `CLAUDE.md`.
 
