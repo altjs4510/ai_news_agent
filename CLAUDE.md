@@ -35,6 +35,8 @@ topseon23 active 상태로는 이 레포에 `gh workflow run` → 403("Must have
 
 **사용 모델** (2026-07 업그레이드, 프록시 `/v1/models` 와 일치해야 함): `claude-opus-4-8` · `claude-sonnet-5` · `claude-haiku-4-5`. 프록시 모델 목록 변경 시 코드의 `resolve_model("…")` 인자도 맞춰야 함 (non-Bedrock 경로는 canonical 이름을 그대로 프록시에 넘김).
 
+**대체 백엔드 — Claude Code 구독 (`claude -p`)**: `.env` 에 `USE_CLAUDE_CLI=1` 넣으면 LLM 을 LiteLLM 대신 구독으로 라우팅(`llm_client.py` 의 `_ClaudeCLIClient` 어댑터가 `messages.create` 흉내). **공용망 어디서든 동작** → WFH/VPN 미접속 대비책. 단 콜당 ~35k 베이스라인 토큰 + 프로세스 spin-up 으로 LiteLLM 보다 느리고 구독 5시간 롤링 한도를 더 먹음. 백엔드 우선순위: `USE_CLAUDE_CLI` > `USE_BEDROCK` > 기본(프록시). 어댑터는 응답이 단일 ```` ``` ```` 펜스로 감싸이면 언랩(내부 펜스 있으면 미변경)해 `json.loads` 안전.
+
 creds 는 로컬 `.env`(git-ignore) 에 둔다. Reddit 등 선택 소스 키가 없으면 해당 소스만 스킵(main.py 가드).
 
 ## 재실행 (daily/weekly 다시 돌리기) — 로컬
