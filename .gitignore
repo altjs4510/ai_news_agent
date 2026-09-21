@@ -43,3 +43,6 @@ current_cron
 # Claude Code · bkit local state (runtime locks, audit logs, snapshots, etc.)
 .claude/
 .bkit/
+
+# X 로그인 세션 (playwright storage_state — 계정 쿠키 포함, 절대 커밋 금지)
+state/x_auth_state.json

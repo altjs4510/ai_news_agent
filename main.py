@@ -9,7 +9,16 @@ from sources.ai_blogs import AIBlogCollector
 from sources.news_feeds import NewsFeedCollector
 from sources.research_feeds import ResearchFeedCollector
 from sources.bluesky import BlueskyCollector
-from config import BLUESKY_HANDLES, REDDIT_CLIENT_ID
+from sources.x_timeline import XTimelineCollector, XSearchCollector
+from sources.x_trends import (
+    extract_keywords as extract_x_keywords,
+    update_trends as update_x_trends,
+    render_markdown as render_x_trends_markdown,
+)
+from config import (
+    BLUESKY_HANDLES, REDDIT_CLIENT_ID, X_STATE_PATH, X_TIMELINE_LIMIT, X_HANDLES,
+    X_SEARCH_KEYWORDS, X_SEARCH_LIMIT_PER_KEYWORD, X_SEARCH_MIN_FAVES, X_TRENDS_STATE_PATH,
+)
 from delivery.markdown_writer import MarkdownWriter
 from delivery.study_brief import generate_study_brief
 from delivery.notion_writer import NotionWriter
@@ -119,7 +128,9 @@ async def main(mode: str = "daily"):
         ENABLE_AI_BLOGS = True
         ENABLE_NEWS_FEEDS = True       # Hacker News + Product Hunt + TechCrunch AI
         ENABLE_RESEARCH_FEEDS = True   # arxiv (cs.AI/cs.CL) + HuggingFace Papers
-        ENABLE_BLUESKY = True          # X 대체 — Bluesky 공개 피드 (인증 불필요)
+        ENABLE_BLUESKY = True          # X 보완 — Bluesky 공개 피드 (인증 불필요)
+        ENABLE_X = True                # X 홈 타임라인 — 개인 계정 로그인 세션 필요(sources/x_login.py), 없으면 자동 스킵
+        ENABLE_X_SEARCH = True         # X 키워드 검색 — 팔로우 무관 바이럴 탐지, 같은 세션 재사용
 
         # 출력 채널 활성화 설정
         ENABLE_BLOG = True
@@ -159,6 +170,21 @@ async def main(mode: str = "daily"):
         if ENABLE_BLUESKY:
             bluesky = BlueskyCollector(handles=BLUESKY_HANDLES, days=days_window, per_handle_limit=8)
             collectors.append(('bluesky', bluesky.fetch_posts()))
+        if ENABLE_X:
+            if os.path.exists(X_STATE_PATH):
+                x_timeline = XTimelineCollector(state_path=X_STATE_PATH, days=days_window, limit=X_TIMELINE_LIMIT, handles=X_HANDLES)
+                collectors.append(('x_timeline', x_timeline.fetch_posts()))
+            else:
+                logger.warning(f"X 로그인 세션 없음({X_STATE_PATH}) — `uv run python sources/x_login.py` 로 1회 로그인 필요. X 소스 스킵")
+        if ENABLE_X_SEARCH:
+            if os.path.exists(X_STATE_PATH):
+                x_search = XSearchCollector(
+                    state_path=X_STATE_PATH, keywords=X_SEARCH_KEYWORDS, days=days_window,
+                    limit_per_keyword=X_SEARCH_LIMIT_PER_KEYWORD, min_faves=X_SEARCH_MIN_FAVES,
+                )
+                collectors.append(('x_search', x_search.fetch_posts()))
+            else:
+                logger.warning(f"X 로그인 세션 없음({X_STATE_PATH}) — X 검색 소스 스킵")
 
         writer = MarkdownWriter()
 
@@ -177,6 +203,7 @@ async def main(mode: str = "daily"):
         news_feed_posts = []
         research_feed_posts = []
         bluesky_posts = []
+        x_posts = []  # x_trends 키워드 트렌드 분석용 — bluesky_posts와 별개로 X만 추적
 
         for i, (source_name, _) in enumerate(collectors):
             result = results[i] if i < len(results) and not isinstance(results[i], Exception) else []
@@ -193,7 +220,35 @@ async def main(mode: str = "daily"):
             elif source_name == 'research_feeds':
                 research_feed_posts = result
             elif source_name == 'bluesky':
-                bluesky_posts = result
+                bluesky_posts = bluesky_posts + result
+            elif source_name == 'x_timeline':
+                bluesky_posts = bluesky_posts + result
+                x_posts = x_posts + result
+            elif source_name == 'x_search':
+                bluesky_posts = bluesky_posts + result
+                x_posts = x_posts + result
+
+        # X 키워드 트렌드 분석 (claude -p 우선 백엔드 그대로 사용 — make_async_client()).
+        # 기사 본문엔 넣지 않고 구조화된 데이터로만 뽑아 홈 화면 별도 위젯에 쓴다.
+        x_trends_items: list[dict] = []
+        if x_posts:
+            logger.info(f"X 키워드 트렌드 분석 중... ({len(x_posts)}개 게시물)")
+            date_str_kst = datetime.now(KST).strftime("%Y%m%d")
+            x_keywords = await extract_x_keywords(x_posts)
+            x_trend_result = update_x_trends(x_keywords, x_posts, X_TRENDS_STATE_PATH, date_str_kst)
+            x_trends_md = render_x_trends_markdown(x_trend_result)
+            with open(f"reports/{date_str_kst}/x_trends.md", "w", encoding="utf-8") as f:
+                f.write(x_trends_md or "오늘은 원본 링크로 뒷받침되는 화제 키워드가 없습니다.\n")
+            for t in x_trend_result["trends"]:
+                if not t["examples"] or t["count"] < 2:
+                    continue
+                ex = t["examples"][0]
+                x_trends_items.append({
+                    "term": t["term"], "url": ex["url"], "title": ex["title"],
+                    "is_new": t["is_new"], "count": t["count"],
+                })
+                if len(x_trends_items) >= 6:
+                    break
 
         # 마크다운 파일 저장
         markdown_writer = MarkdownWriter()
@@ -401,6 +456,7 @@ async def main(mode: str = "daily"):
                         categories=categories,
                         keywords=keywords,
                         has_study=study_md_written,
+                        x_trends_items=x_trends_items,
                     )
                 else:
                     blog_url = publisher.publish_weekly(
@@ -413,6 +469,7 @@ async def main(mode: str = "daily"):
                         additional_picks=additional_picks,
                         categories=categories,
                         has_study=study_md_written,
+                        x_trends_items=x_trends_items,
                     )
                 if blog_url:
                     logger.info(f"블로그 publish 완료: {blog_url}")
@@ -653,7 +710,7 @@ async def summarize_combined_insights(
 ==== Reddit AI 커뮤니티 (한국어 번역본) ====
 {reddit_translated_content[:7500]}
 
-==== Bluesky 버즈 (X 대체 — 주요 AI 인물 단문) ====
+==== 소셜 버즈 (Bluesky + X, 주요 AI 인물 단문) ====
 {bluesky_content[:3500]}
 
 ## 작성 규칙 (반드시 지키세요)
@@ -917,7 +974,7 @@ async def generate_summary_and_keywords(youtube_content, reddit_insights, github
             )
 
     # 요약을 위한 프롬프트 생성
-    prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, YouTube 영상, Bluesky 버즈 자료입니다. 이를 바탕으로 아래 기준에 따라 정리해주세요.
+    prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, YouTube 영상, 소셜 버즈(Bluesky + X) 자료입니다. 이를 바탕으로 아래 기준에 따라 정리해주세요.
 
 자료의 각 항목에는 [텍스트](URL) 형태의 마크다운 링크가 포함되어 있으니, 인용할 때 그 URL을 그대로 본문에 가져다 쓰세요.
 
@@ -933,7 +990,7 @@ async def generate_summary_and_keywords(youtube_content, reddit_insights, github
 ==== YouTube ====
 {youtube_content[:2000]}
 
-==== Bluesky 버즈 (주요 AI 인물 단문, X 대체) ====
+==== 소셜 버즈 (주요 AI 인물 단문, Bluesky + X) ====
 {bluesky_content[:2500]}
 {daily_picks_block}
 ## 사용자 프로젝트 컨텍스트 (Spotlight 작성 시 활용)

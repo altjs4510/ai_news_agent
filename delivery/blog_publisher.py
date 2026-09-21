@@ -405,6 +405,7 @@ class BlogPublisher:
         additional_picks: list[dict] | None = None,
         categories: list[str] | None = None,
         has_study: bool = False,
+        x_trends_items: list[dict] | None = None,
     ) -> str | None:
         """주간 모드 publish — posts/{date}/_index.md + raw.md 생성, 홈 hero 갱신.
 
@@ -635,6 +636,7 @@ class BlogPublisher:
             # 여기 박아두지 않으면 daily 재렌더 때 CTA가 사라진다.
             "spotlight_detail_url": spotlight_detail_url or "",
         }
+        state["x_trends"] = {"date_str": date_str, "items": x_trends_items or []}
         self._save_state(state)
         self._render_home_from_state(state)
 
@@ -651,6 +653,7 @@ class BlogPublisher:
         categories: list[str] | None = None,
         keywords: list[str] | None = None,
         has_study: bool = False,
+        x_trends_items: list[dict] | None = None,
     ) -> str | None:
         """일간 모드 publish — knowledge/{date}.md 1편 + 홈 우측 aside 갱신.
 
@@ -771,6 +774,11 @@ class BlogPublisher:
         })
         picks.sort(key=lambda p: p.get("date_str", ""), reverse=True)
         state["daily_picks"] = picks[:21]
+
+        # X 화제 키워드 — 기사 본문이 아니라 홈 화면 별도 위젯 데이터로만 저장.
+        # 링크로 뒷받침되는 키워드가 없으면 빈 리스트 → 위젯 자체가 사라짐.
+        state["x_trends"] = {"date_str": date_str, "items": x_trends_items or []}
+
         self._save_state(state)
 
         # 홈 렌더 — 우측 aside만 갱신되고 main hero는 weekly state에서 보존
@@ -927,6 +935,7 @@ class BlogPublisher:
         additional_picks: list[dict] | None = None,
         deck: str | None = None,
         spotlight_detail_url: str | None = None,
+        x_trends: dict | None = None,
     ) -> None:
         """홈 _index.md 작성. body_text는 combined_insights 본문(요약 callout 중복 회피).
 
@@ -956,7 +965,7 @@ class BlogPublisher:
         else:
             main_html, footer_html = full_body, ""
 
-        aside_html = self._build_daily_picks_aside_html()
+        aside_html = self._build_daily_picks_aside_html(x_trends=x_trends)
         grid_html = (
             '<div class="ai-home-grid">\n\n'
             + '<div class="ai-home-main">\n\n'
@@ -976,14 +985,53 @@ class BlogPublisher:
         )
         (self.blog_repo / "content" / "_index.md").write_text(page, encoding="utf-8")
 
-    def _build_daily_picks_aside_html(self) -> str:
-        """홈 우측 aside — THIS WEEK (so far) + LAST WEEK 카드 리스트.
+    def _build_x_trends_section_html(self, x_trends: dict | None) -> str:
+        """홈 우측 aside용 — X 화제 키워드 미니 리스트(최신 실행 스냅샷).
+
+        기사 본문엔 넣지 않고 여기서만 노출 — daily/weekly 어느 쪽이 마지막에
+        실행됐든 항상 최신 스냅샷을 반영한다(상태가 덮어써지는 방식).
+        """
+        items = (x_trends or {}).get("items") or []
+        if not items:
+            return ""
+
+        def _chip(t: dict) -> str:
+            term = (t.get("term") or "").replace("&", "&amp;").replace("<", "&lt;")
+            url = (t.get("url") or "").strip()
+            if not term or not url:
+                return ""
+            is_new = bool(t.get("is_new"))
+            badge_cls = "ai-trend-chip--new" if is_new else "ai-trend-chip--rising"
+            badge = "NEW" if is_new else "↑"
+            return (
+                f'<li><a class="ai-trend-chip {badge_cls}" href="{url}" target="_blank" rel="noopener">'
+                f'<span class="ai-trend-chip-badge">{badge}</span>'
+                f'<span class="ai-trend-chip-term">{term}</span>'
+                "</a></li>"
+            )
+
+        chips = [c for c in (_chip(t) for t in items) if c]
+        if not chips:
+            return ""
+
+        return (
+            '  <section class="ai-week-block ai-trend-block">\n'
+            '    <p class="ai-eyebrow">🔥 X 화제 키워드</p>\n'
+            '    <ul class="ai-trend-chips">\n      '
+            + "\n      ".join(chips)
+            + "\n    </ul>\n"
+            "  </section>"
+        )
+
+    def _build_daily_picks_aside_html(self, x_trends: dict | None = None) -> str:
+        """홈 우측 aside — X 화제 키워드 + THIS WEEK (so far) + LAST WEEK 카드 리스트.
 
         state.daily_picks(최신순)에서 ISO 주차 기준 분리.
         """
         state = self._load_state()
         picks = state.get("daily_picks") or []
-        if not picks:
+        x_trends_section = self._build_x_trends_section_html(x_trends)
+        if not picks and not x_trends_section:
             return ""
 
         today = datetime.now(KST).date()
@@ -1018,6 +1066,8 @@ class BlogPublisher:
             )
 
         sections = []
+        if x_trends_section:
+            sections.append(x_trends_section)
         if this_week:
             sections.append(
                 '  <section class="ai-week-block">\n'
@@ -1081,6 +1131,7 @@ class BlogPublisher:
             additional_picks=weekly.get("additional_picks") or [],
             deck=weekly.get("deck") or None,
             spotlight_detail_url=spotlight_detail_url,
+            x_trends=state.get("x_trends"),
         )
 
     def _git_commit_and_push(self, date_str: str) -> bool:

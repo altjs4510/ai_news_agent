@@ -37,6 +37,51 @@ BLUESKY_HANDLES = [
     # 대체로 커버하므로 Bluesky 사각지대는 후순위.
 ]
 
+# X (Twitter) — 공식 API 대신 개인 계정 로그인 세션으로 Following 홈 타임라인을 읽는다.
+# 이용약관상 자동 스크래핑 금지 행위라 계정 정지 리스크를 감수하는 경로 — 상세는 CLAUDE.md 참조.
+# state 파일은 sources/x_login.py 를 1회 수동 실행해 발급(git-ignore, 세션 쿠키 포함).
+X_STATE_PATH = "state/x_auth_state.json"
+X_TIMELINE_LIMIT = 20
+
+# 키워드 검색 — 팔로우 여부와 무관하게 바이럴/트렌드 게시물을 탐지.
+# X 검색 연산자(since:/until:/min_faves:)로 서버 사이드에서 날짜·인게이지먼트 범위를 좁힌다.
+# 특정 모델 버전명(GPT-5 등)은 넣지 않음 — 버전은 계속 바뀌고, 광범위한 주제어 + 인게이지먼트
+# 기준만으로도 그 시점 화제(신규 모델 출시 등)가 자연히 상위로 걸러진다.
+X_SEARCH_KEYWORDS = [
+    "AI agent",
+    "agentic AI",
+    "LLM",
+    "open weights",
+    "AI coding assistant",
+    "MCP protocol",
+    "reasoning model",
+    "AGI",
+]
+X_SEARCH_LIMIT_PER_KEYWORD = 8
+X_SEARCH_MIN_FAVES = 200
+
+# 키워드 트렌드 분석 — 일별 언급 횟수 누적(sources/x_trends.py)
+X_TRENDS_STATE_PATH = "state/x_keyword_trends.json"
+
+# 개인 계정이라 Following 피드에 기존 지인/취미 계정이 섞여 있음 — Bluesky와 동일하게
+# 핸들 화이트리스트로 걸러서 AI 무관 게시물(연예/패션/스포츠 등)을 원천 차단한다.
+# 2026-08 팔로우 시작. 대소문자 무시 매칭(x_timeline.py).
+X_HANDLES = [
+    # 공식 랩/기업
+    "OpenAI", "AnthropicAI", "GoogleDeepMind", "AIatMeta", "MistralAI",
+    "xai", "huggingface", "perplexity_ai",
+    # 리서처/빌더 — Bluesky에 없는 X-only 인물(BLUESKY_HANDLES 주석 참조)
+    "karpathy", "ylecun", "lilianweng", "DrJimFan", "AndrewYNg",
+    "fchollet", "jeremyphoward", "rasbt", "_akhaliq", "polynoamial",
+    "demishassabis",
+    # 코딩 에이전트 / 개발 툴
+    "swyx", "simonw", "AravSrinivas", "amasad", "cursor_ai", "LangChainAI",
+    # 오픈소스 / 로컬 LLM
+    "Teknium1", "NousResearch", "UnslothAI", "togethercompute",
+    # AI 뉴스 큐레이션
+    "rowancheung",
+]
+
 REDDIT_SUBREDDITS = [
     # 일반 AI 동향
     "artificial",

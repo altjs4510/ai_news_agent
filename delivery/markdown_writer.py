@@ -35,7 +35,7 @@ class MarkdownWriter:
         """Bluesky 게시물을 본문 + 인게이지먼트 표로 저장."""
         filepath = self.base_dir / "bluesky_raw.md"
         with open(filepath, "w", encoding="utf-8") as f:
-            f.write("# Bluesky (X 대체) 수집 데이터\n")
+            f.write("# 소셜 버즈 (Bluesky + X) 수집 데이터\n")
             f.write(f"수집 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             f.write("| 작성자 | 본문 | 인게이지먼트 | 작성일 | 링크 |\n")
             f.write("|--------|------|--------------|--------|------|\n")
@@ -80,17 +80,26 @@ class MarkdownWriter:
             f.write(f"수집 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             
             # 테이블 헤더
-            f.write("| 출처 | 제목 | 링크 | 작성일 |\n")
-            f.write("|------|------|------|--------|\n")
-            
+            # "요약" 컬럼: 각 collector(news_feeds/ai_blogs/research_feeds/youtube)가 이미
+            # RSS description·transcript 등에서 뽑아 content 필드에 담아 넘겨주는데, 예전엔
+            # 여기서 안 쓰고 버렸다(트리아지 TUI에서 "내용이 안 보인다" 문제의 실제 원인,
+            # 2026-08-20). 표 폭 보호를 위해 이 레벨에서 다시 짧게 트림한다.
+            f.write("| 출처 | 제목 | 요약 | 링크 | 작성일 |\n")
+            f.write("|------|------|------|------|--------|\n")
+
             # 각 콘텐츠를 테이블 행으로 추가
             for content in contents:
                 title = content['title'].replace('|', '\\|')  # 파이프 문자 이스케이프
                 source = content['source'].replace('|', '\\|')
                 url = content['url']
                 published_at = content.get('published_at', '-')
-                
-                f.write(f"| {source} | {title} | [링크]({url}) | {published_at} |\n")
+                summary = (content.get('content') or '').replace('|', '\\|').replace('\n', ' ').strip()
+                if summary == title:
+                    summary = ""  # content가 title fallback인 경우(설명 없음) 중복 표시 안 함
+                if len(summary) > 200:
+                    summary = summary[:200] + "…"
+
+                f.write(f"| {source} | {title} | {summary} | [링크]({url}) | {published_at} |\n")
         
         return filepath
 
@@ -103,16 +112,21 @@ class MarkdownWriter:
             f.write(f"수집 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             
             # 테이블 헤더
-            f.write("| 서브레딧 | 제목 | 링크 | 작성일 |\n")
-            f.write("|----------|------|------|--------|\n")
-            
+            f.write("| 서브레딧 | 제목 | 요약 | 링크 | 작성일 |\n")
+            f.write("|----------|------|------|------|--------|\n")
+
             for content in contents:
                 title = content['title'].replace('|', '\\|')
                 subreddit = content['source'].split(' - ')[1]  # "Reddit - r/artificial" -> "r/artificial"
                 url = content['url']
                 published_at = content.get('published_at', '-')
-                
-                f.write(f"| {subreddit} | {title} | [링크]({url}) | {published_at} |\n")
+                summary = (content.get('content') or '').replace('|', '\\|').replace('\n', ' ').strip()
+                if summary == title:
+                    summary = ""
+                if len(summary) > 200:
+                    summary = summary[:200] + "…"
+
+                f.write(f"| {subreddit} | {title} | {summary} | [링크]({url}) | {published_at} |\n")
 
         # 2. 번역본 상세 저장
         translated_filepath = self.base_dir / "reddit_translated.md"
