@@ -25,7 +25,7 @@ set -a
 [ -f .env ] && . ./.env
 set +a
 
-UV="/Users/ac1158/.local/bin/uv"
+UV="$HOME/.local/bin/uv"
 LOG="logs/pipeline_${MODE}.log"
 mkdir -p logs
 

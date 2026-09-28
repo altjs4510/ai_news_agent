@@ -25,7 +25,7 @@ command -v caffeinate >/dev/null && caffeinate -i -w "$$" &
 
 log "===== Medium Digest 자동화 시작 ====="
 
-CLAUDE="/Users/ac1158/.local/bin/claude"
+CLAUDE="$HOME/.local/bin/claude"
 PROMPT_FILE="automation/medium_digest_prompt.md"
 
 ALLOWED_TOOLS="mcp__claude_ai_Microsoft_365__outlook_email_search mcp__claude_ai_Microsoft_365__read_resource mcp__claude-in-chrome__tabs_context_mcp mcp__claude-in-chrome__navigate mcp__claude-in-chrome__get_page_text mcp__claude-in-chrome__tabs_close_mcp Write Read Glob Bash(mkdir -p *) Bash(grep *)"
