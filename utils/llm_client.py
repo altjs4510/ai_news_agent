@@ -35,7 +35,17 @@ from typing import Any
 _FENCE_RE = re.compile(r"^```[A-Za-z0-9_-]*\n(.*)\n```$", re.DOTALL)
 
 
+# 사내 managed CLAUDE.md 가 claude -p 응답 첫 줄에 "[F&F Policy Active]" 를 강제한다(우회 불가).
+# 발행 본문·JSON 파싱에 섞이지 않게 응답 앞머리의 이 태그 줄만 제거한다.
+_POLICY_TAG_RE = re.compile(r"^\s*\[F&F Policy Active\]\s*\n?")
+
+
+def _strip_policy_tag(text: str) -> str:
+    return _POLICY_TAG_RE.sub("", text, count=1)
+
+
 def _strip_outer_fence(text: str) -> str:
+    text = _strip_policy_tag(text)
     t = text.strip()
     m = _FENCE_RE.match(t)
     if m and "```" not in m.group(1):
