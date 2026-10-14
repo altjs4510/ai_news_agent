@@ -313,7 +313,8 @@ async def main(mode: str = "daily"):
                     available_daily_picks = _state.get("daily_picks") or []
                     if mode == "daily":
                         # 최근 14일치만 dedup 신호로 사용 (그 이전은 사실상 freshness 만료)
-                        available_daily_picks = available_daily_picks[-14:]
+                        # daily_picks 는 최신순(publisher 가 reverse sort) → 앞에서 14개.
+                        available_daily_picks = available_daily_picks[:14]
                     logger.info(
                         f"{mode} 모드 — daily picks {len(available_daily_picks)}건을 "
                         f"{'dedup' if mode == 'daily' else '매칭'} 컨텍스트로 전달"
