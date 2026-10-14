@@ -178,6 +178,18 @@ python publish_note.py --slug proprag \
 
 - **API 한도 초과**: OpenAI 또는 Anthropic API 요청 제한에 도달한 경우, 로그를 확인하고 일정 시간 후 다시 시도
 - **소스 변경**: 크롤링 소스 사이트의 구조가 바뀐 경우 해당 모듈 업데이트 필요
+- **X 수집 안 됨 / 홈의 X 키워드 트렌드가 사라짐**: 로그에 `X 로그인 세션 없음` 이 찍히면 X 세션
+  (`state/x_auth_state.json`, git-ignore)이 없거나 만료된 것. PC 포맷 후에도 반드시 다시 만들어야 한다.
+  X 에 로그인된 Chrome 프로필의 쿠키를 가져오는 방식으로 재발급:
+
+  ```bash
+  uv run --with browser-cookie3 python sources/x_login.py --from-chrome --profile "Profile 1"
+  ```
+
+  - macOS 키체인 "Chrome Safe Storage" 접근 허용 창이 뜨면 허용.
+  - 프로필 이름은 그 Chrome 창의 `chrome://version` → "프로필 경로" 끝부분(`Default`, `Profile 1` …).
+  - `uv run python sources/x_login.py` 는 새 브라우저 창 로그인 방식인데, 구글 로그인은 리디렉션이
+    막혀 실패한다 — 이 방식을 쓰려면 X 아이디·비밀번호로 로그인.
 
 ## 라이센스
 

@@ -50,8 +50,15 @@ creds 는 로컬 `.env`(git-ignore) 에 둔다. Reddit 등 선택 소스 키가 
 
 `sources/x_timeline.py` 가 개인 X 계정의 **Following 홈 타임라인**을 Playwright 로 읽는다. 공식 API가 아니다 — X 이용약관상 자동 스크래핑은 금지 행위라 **계정 정지 리스크를 감수하는 경로**로 의도적으로 선택함(공식 API Basic 플랜 $200/월~ 이 비용상 안 맞아서 대안으로 채택). 리스크를 낮추려고 하루 1회(파이프라인 배치) 수준의 저빈도 호출로만 쓴다 — 그 이상 자주 돌리거나 탐지 회피 기법(핑거프린트 위장 등)을 추가하지 않는다.
 
-- **1회 수동 로그인 필요**: `uv run python sources/x_login.py` — 브라우저 창이 뜨면 본인 X 계정으로 로그인 후 터미널에서 Enter. 세션이 `state/x_auth_state.json` 에 저장됨(git-ignore, 쿠키 포함 — 절대 커밋 금지).
-- 세션 없거나 만료되면 `main.py` 가 경고 로그만 남기고 X 소스를 조용히 스킵(다른 소스엔 영향 없음). 만료 시 `x_login.py` 재실행.
+- **세션 발급 — 기본 경로는 Chrome 프로필 쿠키 가져오기** (사용자가 X 에 로그인해 둔 Chrome 프로필에서 x.com 쿠키만 복사):
+  ```bash
+  uv run --with browser-cookie3 python sources/x_login.py --from-chrome --profile "Profile 1"
+  ```
+  - 사용자(쿠키)의 X 로그인 프로필은 `Profile 1` (2026-10-14 확인). 바뀌면 그 Chrome 창의 `chrome://version` → "프로필 경로" 끝 이름으로.
+  - macOS 키체인 "Chrome Safe Storage" 허용 창이 뜬다 → **Claude 가 대신 실행하지 말고 위 명령을 그대로 안내해 사용자가 직접 실행**하게 한다(브라우저 쿠키 접근은 auto mode 분류기도 차단함).
+  - `uv run python sources/x_login.py`(Playwright 창 로그인)는 폴백. **구글 로그인은 자동화 브라우저라 리디렉션이 막혀 실패** — 쓰려면 X 아이디·비밀번호로.
+- 세션은 `state/x_auth_state.json`(git-ignore, 0600, 쿠키 포함 — 절대 커밋 금지). **git 백업에 안 들어가므로 PC 포맷 후엔 반드시 재발급** (2026-09 포맷 후 9/28~10/14 X 수집·홈 트렌드가 조용히 빠졌던 원인).
+- 세션 없거나 만료되면 `main.py` 가 경고 로그만 남기고 X 소스를 조용히 스킵(다른 소스엔 영향 없음) → 홈 X 트렌드 칸도 사라짐. 만료 시 위 명령 재실행.
 - `uv run playwright install chromium` 브라우저 바이너리 설치 필요(최초 1회, `uv sync` 후).
 - X 게시물은 Bluesky 게시물과 같은 버킷(`bluesky_posts` 변수, `social_raw.md` 성격의 `bluesky_raw.md` 파일)에 합쳐져 프롬프트에 "소셜 버즈(Bluesky + X)"로 들어간다.
 - X 웹앱 DOM은 예고 없이 바뀐다 — 파싱 실패 시 해당 트윗만 스킵하고 전체 실행은 죽지 않는다(`sources/x_timeline.py` 의 `_parse_tweet_article`).

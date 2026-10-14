@@ -175,7 +175,7 @@ async def main(mode: str = "daily"):
                 x_timeline = XTimelineCollector(state_path=X_STATE_PATH, days=days_window, limit=X_TIMELINE_LIMIT, handles=X_HANDLES)
                 collectors.append(('x_timeline', x_timeline.fetch_posts()))
             else:
-                logger.warning(f"X 로그인 세션 없음({X_STATE_PATH}) — `uv run python sources/x_login.py` 로 1회 로그인 필요. X 소스 스킵")
+                logger.warning(f"X 로그인 세션 없음({X_STATE_PATH}) — `uv run --with browser-cookie3 python sources/x_login.py --from-chrome --profile \"Profile 1\"` 로 재발급 필요. X 소스 스킵")
         if ENABLE_X_SEARCH:
             if os.path.exists(X_STATE_PATH):
                 x_search = XSearchCollector(
