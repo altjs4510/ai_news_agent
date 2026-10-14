@@ -356,11 +356,40 @@ async def main(mode: str = "daily"):
 
             if cached is None:
                 try:
-                    headline, deck, spotlight, additional_picks, summary, keywords, categories = await generate_summary_and_keywords(
-                        youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content,
-                        daily_picks=available_daily_picks or None,
-                        mode=mode,
+                    # daily — 프롬프트 dedup 은 LLM 이 무시할 수 있으므로 코드로 강제.
+                    # 최근 픽과 같은 URL/저장소면 반려 목록을 붙여 재생성(최대 2회).
+                    recent_keys = (
+                        {_pick_key(p.get("url", "")) for p in available_daily_picks} - {""}
+                        if mode == "daily" else set()
                     )
+                    rejected: list[str] = []
+                    for attempt in range(3):
+                        headline, deck, spotlight, additional_picks, summary, keywords, categories = await generate_summary_and_keywords(
+                            youtube_content, combined_insights, github_content, ai_blogs_content, bluesky_content,
+                            daily_picks=available_daily_picks or None,
+                            mode=mode,
+                            avoid_urls=rejected or None,
+                        )
+                        sp_url = (spotlight or {}).get("url", "") if isinstance(spotlight, dict) else ""
+                        if _pick_key(sp_url) not in recent_keys:
+                            break
+                        logger.warning(f"spotlight 중복(최근 daily pick과 동일): {sp_url} — 재생성 {attempt + 1}/2")
+                        rejected.append(sp_url)
+                    else:
+                        # 재생성해도 중복 → 중복 아닌 additional_pick 을 spotlight 로 승격
+                        fresh = [p for p in additional_picks if _pick_key(p.get("url", "")) not in recent_keys]
+                        if fresh:
+                            promoted = fresh[0]
+                            spotlight = {
+                                "title": promoted["title"],
+                                "url": promoted["url"],
+                                "why": promoted["summary"],
+                                "application": "",
+                            }
+                            additional_picks = [p for p in additional_picks if p is not promoted]
+                            logger.warning(f"spotlight 중복 지속 — additional_pick 승격: {promoted['title']}")
+                        else:
+                            logger.error("spotlight 중복 지속 + 대체 후보 없음 — 중복 상태로 발행")
                     # LLM이 생성한 spotlight/picks URL 실제 접근 가능 여부 검증.
                     # 404/접속 불가 URL은 비워서(""), publisher가 외부 링크 대신 텍스트만 노출.
                     spotlight, additional_picks = await _validate_pick_urls(spotlight, additional_picks)
@@ -915,7 +944,18 @@ async def _validate_pick_urls(
     return spotlight, valid_picks
 
 
-async def generate_summary_and_keywords(youtube_content, reddit_insights, github_content="", ai_blogs_content="", bluesky_content="", daily_picks: list[dict] | None = None, mode: str = "daily"):
+def _pick_key(url: str) -> str:
+    """dedup 비교 키 — scheme·www·query·fragment·끝 슬래시 제거, 소문자.
+    GitHub 은 같은 저장소의 하위 페이지(README·releases 등)까지 owner/repo 로 묶는다."""
+    u = (url or "").strip().lower()
+    u = re.sub(r"^https?://(www\.)?", "", u)
+    u = re.split(r"[?#]", u, maxsplit=1)[0].rstrip("/")
+    if u.startswith("github.com/"):
+        u = "/".join(u.split("/")[:3])
+    return u
+
+
+async def generate_summary_and_keywords(youtube_content, reddit_insights, github_content="", ai_blogs_content="", bluesky_content="", daily_picks: list[dict] | None = None, mode: str = "daily", avoid_urls: list[str] | None = None):
     """수집된 콘텐츠를 기반으로 전체 요약과 키워드를 생성합니다.
 
     daily_picks: home_state.json의 누적 daily picks. mode에 따라 LLM 지시가 다르다.
@@ -973,6 +1013,16 @@ async def generate_summary_and_keywords(youtube_content, reddit_insights, github
                 + "\n\n".join(lines)
                 + "\n"
             )
+
+    # 코드 dedup 검사에서 반려된 직전 응답 — 재생성 시에만 붙는다.
+    if avoid_urls:
+        daily_picks_block += (
+            "\n\n## ⛔ 직전 응답 반려 — spotlight 중복\n\n"
+            "직전 응답의 spotlight가 최근 daily picks와 같은 항목이라 반려됐습니다. "
+            "아래 URL·같은 저장소는 spotlight와 additional_picks 어디에도 쓰지 마세요.\n\n"
+            + "\n".join(f"- {u}" for u in avoid_urls)
+            + "\n"
+        )
 
     # 요약을 위한 프롬프트 생성
     prompt = f"""다음은 AI 관련 공식 블로그(Anthropic/OpenAI/Google), Reddit 인사이트, GitHub Trending, YouTube 영상, 소셜 버즈(Bluesky + X) 자료입니다. 이를 바탕으로 아래 기준에 따라 정리해주세요.
